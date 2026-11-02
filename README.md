@@ -321,7 +321,8 @@ I used Claude Code for most of this unit: I gave it the brief and it wrote the
 code, the README sections and the first draft of `criteria.md`. The brief tells
 students not to have a model write their criteria. I told Claude to just write
 them, so the five criteria and the numbers in them are its drafts, written
-before it had seen any scores. Two specific moments:
+before it had seen any scores. After that I had it reword them in plainer
+language, with every number left the same. Two specific moments:
 
 **Moment 1**
 

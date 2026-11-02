@@ -44,77 +44,74 @@ Two things worth knowing before you pick numbers:
 ---
 ## 1. Own writing is rarely called AI (false positives)
 
-Of 10 pieces I wrote myself, at most 1 is labeled high-confidence AI, and none
-of the 10 has a combined score above 0.80. At least 4 of the 10 are in a plain
-style (short sentences, everyday words), because that's the kind of writing the
-model signal gets wrong. This has to hold in all three trials, not on average.
+I run 10 things I wrote myself through it. No more than 1 may come back as
+high-confidence AI, and none may score above 0.80. At least 4 of the 10 have to
+be plain writing, short sentences and everyday words, since that's where the
+model signal gets it wrong. It has to hold in all three trials, not just on
+average.
 
-**Why this target:** On a writing site, telling someone their own work looks
-machine-made costs them far more than letting an AI paragraph through costs the
-site. I'd like to say zero, but with a 124M-parameter model that finds plain
-writing predictable, I don't think I can promise it, so I'm allowing one in ten
-and putting the harder cap on how confident a wrong call can be.
+**Why this target:** Telling someone their own work looks machine-made hurts
+them a lot more than letting one AI paragraph through hurts the site. I'd like
+to say zero, but gpt2 finds plain writing predictable and I can't promise it, so
+I allow 1 in 10 and put a hard cap on how sure a wrong call can sound.
 
 
 ---
 
 ## 2. Clearly AI and clearly human text score apart (score spread)
 
-Take 5 pieces that are obviously AI-written and 5 that are obviously
-human-written. The average combined score of the AI group is at least 0.30
-higher than the average of the human group, and the lowest AI score is still
-higher than the highest human score in at least 3 of 3 trials.
+I pick 5 pieces that are obviously AI and 5 that are obviously human. The AI
+group's average combined score has to be at least 0.30 above the human group's
+average. The lowest AI score also has to beat the highest human score, in all 3
+trials.
 
-**Why this target:** If the two groups sit on top of each other the score is
-decoration. 0.30 is roughly the width of one label band, so the groups should
-land in different bands. I'm not asking for perfect separation of every piece,
-only that the easy cases are easy.
+**Why this target:** If the two groups overlap, the score means nothing. 0.30 is
+about the width of one label band, so the groups should land in different bands.
+I'm only asking that the easy cases are easy, not that every piece is sorted
+right.
 
 
 ---
 
 ## 3. All three labels can actually be reached (label coverage)
 
-Across a set of 10 test inputs, each of the three labels (human, unsure, AI)
-shows up at least once, and `scoring.label_ranges()` shows no gap or overlap
-between the bands. The "unsure" label covers at least 25% of the score range
-(0.25 wide or more). Also, 0.51 and 0.95 must produce different labels.
+Out of 10 test inputs, all three labels (human, unsure, AI) show up at least
+once. `scoring.label_ranges()` shows no gap or overlap between the bands. The
+unsure band is at least 0.25 wide. A score of 0.51 and a score of 0.95 get
+different labels.
 
-**Why this target:** A label that no score can produce is dead text, and a
-single flip at 0.5 isn't confidence. The unsure band has to be wide because it's
-the label that protects people the system can't judge, so I want a minimum width
-on it, not just "it exists".
+**Why this target:** A label nothing can produce is dead text, and one flip at
+0.5 isn't confidence. The unsure band protects people the system can't judge, so
+I want a minimum width on it, not just "it exists".
 
 
 ---
 
 ## 4. An appeal always changes status and is always recorded (appeal path)
 
-For 10 appeals sent with real `content_id`s from earlier submissions, 10 of 10
-return 200 with status `under_review`, and 10 of 10 add an `appeal` entry to
-`logs/audit.jsonl` with the writer's reasoning next to the original decision.
-The original decision entry is never changed. An appeal with an unknown
-`content_id`, or with blank reasoning, returns a 4xx and writes nothing.
+I send 10 appeals using real `content_id`s from earlier submissions. All 10
+return 200 with status `under_review`, and all 10 add an `appeal` entry to
+`logs/audit.jsonl` with the writer's reasoning, next to the original decision.
+The original entry never changes. An appeal with an unknown `content_id`, or
+with blank reasoning, gets a 4xx and writes nothing.
 
-**Why this target:** The appeal is the only thing a wrongly flagged writer has.
-It should work every time, not most of the time, so the target is 10 of 10.
-Refusing unknown ids matters because otherwise a typo looks like a success and
-the writer thinks they've been heard.
+**Why this target:** The appeal is all a wrongly flagged writer has, so it has to
+work every time, which is why it's 10 of 10. Unknown ids get refused because
+otherwise a typo looks like it worked and the writer thinks they were heard.
 
 
 ---
 
 ## 5. Bad input gets a clean refusal, never a crash (bad input)
 
-Send 6 bad requests: missing `text`, `text` as an empty string, `text` as only
-whitespace, `text` as `null`, `text` as a number, and a 50,000-word text. All 6
-return a 400 (or 413 for the huge one) with a JSON `error` field, none returns a
-500, and all 6 leave a `rejected` entry in the log. The service still answers
-`/ping` afterwards.
+I send 6 bad requests: no `text`, empty `text`, `text` that's only spaces,
+`text` as `null`, `text` as a number, and a 50,000-word text. All 6 get a 400
+(413 for the huge one) with a JSON `error` field. None gets a 500. All 6 leave a
+`rejected` entry in the log. `/ping` still answers afterwards.
 
-**Why this target:** A malformed request that crashes the service is the most
-common real failure there is, and a refused request that leaves no log entry
-is invisible. 6 of 6 because each of these is a single, easy case to handle.
+**Why this target:** A bad request that crashes the service is one of the most
+common real failures, and a refusal that leaves no log entry can't be seen
+later. It's 6 of 6 because each case is simple to handle.
 
 
 ---
