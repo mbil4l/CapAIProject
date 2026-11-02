@@ -88,8 +88,9 @@ The path a submission takes:
 | out | `content_id`, `status` | status is now `under_review` |
 | out | `message` | confirmation in plain language |
 
-Errors are always JSON, `{"error": "...", "message": "..."}`, with a 400 for
-bad input and a 404 for an unknown `content_id`. Nothing should ever be a 500.
+Errors are always JSON, `{"error": "...", "message": "..."}`: a 400 for bad
+input, a 413 for text over 20,000 characters, a 404 for an unknown
+`content_id`, and a 503 if the model can't load. Nothing should ever be a 500.
 
 ### The false positive I'm designing around
 
@@ -217,39 +218,45 @@ Two things in that table I'm not happy about:
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | below 0.35 | We think this was probably written by a person. Nothing in it looked machine-made to us, though no automatic check is perfect. |
+| unsure | 0.35 to 0.65 | We can't tell whether this was written by a person or with an AI tool. That's not a finding that anything is wrong. Plain, short or heavily edited writing is hard for us to read either way. |
+| high-confidence AI | above 0.65 | This looks like it may have been written with an AI tool. We can be wrong, especially about plain or simple writing. If you wrote it yourself, tell us using the appeal option and we'll mark it for review. |
 
-**Why I worded the "unsure" one this way:**
-<!-- It's the hardest of the three. It has to admit uncertainty without
-     sounding like an accusation, because the person reading it may well have
-     written every word themselves. -->
+The bands are in `config.py` (`HUMAN_THRESHOLD = 0.35`, `AI_THRESHOLD = 0.65`)
+and the label text is in `scoring.py` (`LABEL_HUMAN`, `LABEL_UNSURE`,
+`LABEL_AI`). `scoring.label_ranges()` prints the bands and there's no gap
+between them, so every score from 0 to 1 gets exactly one label. I reached all
+three with real submissions (see Sample Run). The two bands that are easy to hit
+are human and AI. Unsure took the "lightly edited AI" text.
 
+**Why I worded the "unsure" one this way:** The person reading it may have
+written every word, so the first thing it says is that we don't know, and the
+second is that this isn't an accusation. I left out any number, and I said why
+it's hard (plain, short or edited writing) so it doesn't read like a verdict on
+them. I'm not sure it works. "Heavily edited" could read as a dig at someone who
+did edit their work carefully, and I haven't tested these on anyone else yet.
+The AI label says out loud that it can be wrong, since the false positive is the
+mistake I care about most.
 
 
 ---
 
 ## Sample Run
 
-<!-- One submission and one appeal, pasted as text: the request, the response,
-     and the log entries. -->
+The text I'm following here is a plain diary-style paragraph I invented to test
+the false positive. It's not real writing from a real person. It gets
+called AI, and then the "writer" appeals.
 
 **A submission**
-
-<!-- The response needs content_id, guess, confidence, label, AND both
-     signal scores - model_score and style_score. Unit 8's tools read those
-     two off the response, so leaving them out costs you next unit's
-     diagnostics. -->
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "I woke up late today. I made some coffee and checked my phone. Then I walked to the store to get milk and bread. The store was busy because it was Saturday. I came home and made a sandwich for lunch. After that I watched a movie with my brother.", "creator_id": "sample_writer_4"}'
 ```
 
 ```json
-
+{"confidence":0.7791,"content_id":"6a9666b702a2","guess":"ai","label":"This looks like it may have been written with an AI tool. We can be wrong, especially about plain or simple writing. If you wrote it yourself, tell us using the appeal option and we'll mark it for review.","model_score":0.8305,"status":"decided","style_score":0.7276}
 ```
 
 **An appeal**
@@ -257,38 +264,88 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "...", "reasoning": "..."}'
+  -d '{"content_id": "6a9666b702a2", "reasoning": "This is a plain diary entry I wrote myself. I write in short sentences."}'
 ```
 
 ```json
-
+{"content_id":"6a9666b702a2","message":"We've got your appeal and marked this piece for review. The original result is kept as it was.","status":"under_review"}
 ```
 
 **What the log shows afterwards**
 
 ```bash
-$ curl "http://127.0.0.1:5000/log?limit=3"
+$ curl "http://127.0.0.1:5000/log"
 ```
+
+That returned 13 entries. These are the two for this `content_id`, picked out of
+the full output (the rest are the other submissions and the rejections). The
+log is append-only, so the original decision still says `decided` and the
+appeal is written beside it. An item's current status is whatever its latest
+entry says.
 
 ```json
+{"combined_score": 0.7791, "content_id": "6a9666b702a2", "creator_id": "sample_writer_4", "guess": "ai", "label": "This looks like it may have been written with an AI tool. We can be wrong, especially about plain or simple writing. If you wrote it yourself, tell us using the appeal option and we'll mark it for review.", "model_score": 0.8305, "status": "decided", "style_score": 0.7276, "timestamp": "2026-11-02T07:34:43+00:00"}
+{"content_id": "6a9666b702a2", "creator_id": "sample_writer_4", "event": "appeal", "reasoning": "This is a plain diary entry I wrote myself. I write in short sentences.", "status": "under_review", "timestamp": "2026-11-02T07:34:52+00:00"}
+```
+
+**The other label checks, from the same run**
+
+| Text | model | style | combined | label |
+|---|---|---|---|---|
+| AI-style paragraph | 0.7697 | 0.5953 | 0.6825 | ai |
+| bakery paragraph | 0.3119 | 0.0872 | 0.1996 | human |
+| lightly edited AI | 0.7093 | 0.5281 | 0.6187 | unsure |
+
+**Bad input and unknown ids** (criteria 4 and 5):
 
 ```
+POST /submit  no text / "" / "   " / null / 42   ->  400 400 400 400 400
+POST /submit  50,000 words                       ->  413
+POST /appeal  content_id "6a9666b702zz" (typo)   ->  404 {"error":"unknown_content_id", ...}
+POST /appeal  blank reasoning                    ->  400 {"error":"missing_reasoning", ...}
+POST /ping    afterwards                         ->  {"ok":true,"service":"provenance-guard","you_sent":"hello"}
+```
+
+All of those leave a `rejected` entry in `logs/audit.jsonl`.
+
+One thing that tripped me up on Windows: if the text has a character like an em
+dash and I put it inline in `curl -d '...'`, it reaches the service in the wrong
+encoding and I get `400 bad_json`. The service is right to refuse it. Sending the
+same JSON from a file (`--data-binary @body.json`) works.
 
 ---
 
 ## How I Used AI
 
+I used Claude Code for most of this unit: I gave it the brief and it wrote the
+code, the README sections and the first draft of `criteria.md`. The brief tells
+students not to have a model write their criteria. I told Claude to just write
+them, so the five criteria and the numbers in them are its drafts, written
+before it had seen any scores. Two specific moments:
+
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* A second signal in `stylometry.py` built from sentence
+  spread, word variety and punctuation.
+- *What came back:* A working signal. Running it on six invented texts showed
+  that the word-variety part pointed the wrong way: the AI paragraph had more
+  variety than the human one. The plain "I woke up late today" paragraph also
+  got called AI by both signals.
+- *What I changed:* I kept word variety at the lowest weight (0.15) and wrote
+  down that it separates almost nothing, instead of dropping it or tuning it
+  until the table looked good. I also didn't move the thresholds to make the
+  plain paragraph come out human, because that would be fitting to one example.
+  It's listed as a known problem for unit 8.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* A sample run with one text for each label.
+- *What came back:* The bakery text was refused with `400 bad_json` twice. First
+  guess was a bug in the route.
+- *What I changed:* Nothing in the service. Sending the identical JSON from a
+  file worked, so the problem was Windows passing the inline curl argument in the
+  wrong encoding. I used `--data-binary @file` for that one request and added a
+  note to Sample Run.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
