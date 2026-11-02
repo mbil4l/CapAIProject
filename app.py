@@ -31,6 +31,8 @@ from flask import Flask, jsonify, request
 import audit
 import config
 import detector
+import scoring
+import stylometry
 
 app = Flask(__name__)
 
@@ -229,24 +231,28 @@ def submit():
         return jsonify({"error": "detector_unavailable",
                         "message": "The model isn't available right now."}), 503
 
-    content_id = uuid.uuid4().hex[:12]
+    style_score = stylometry.style_signal(text)
+    combined = scoring.combine_signals(model_score, style_score)
+    guess, label = scoring.score_to_label(combined)
 
-    # Milestone 3: signal one only. confidence, label and style_score are
-    # placeholders until the next two milestones.
+    content_id = uuid.uuid4().hex[:12]
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id,
-        guess="pending",
+        guess=guess,
         model_score=model_score,
+        style_score=style_score,
+        combined_score=combined,
+        label=label,
         status="decided",
     )
     return jsonify({
         "content_id": content_id,
-        "guess": "pending",
-        "confidence": None,
-        "label": None,
+        "guess": guess,
+        "confidence": combined,
+        "label": label,
         "model_score": model_score,
-        "style_score": None,
+        "style_score": style_score,
         "status": "decided",
     })
 

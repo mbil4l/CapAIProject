@@ -150,9 +150,20 @@ unreliable on short text, where a few sentences give a noisy spread.
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** Take a weighted average of the two signals. If they disagree by
+more than a set gap, pull the average halfway back toward 0.5. Two methods that
+disagree are telling me they don't know, and the label should say so. I'm not
+making the average lean toward either signal, because on my calibration texts
+neither was clearly the more trustworthy one. The one place I worried about it
+is that agreement can't be fixed by a rule: when both signals are wrong in the
+same direction (plain human writing), the average is wrong too.
 
-**The numbers:**
+**The numbers:** `WEIGHT_MODEL_SIGNAL = 0.5`, `WEIGHT_STYLE_SIGNAL = 0.5`,
+`DISAGREE_GAP = 0.30`, `DISAGREE_SHRINK = 0.5` (all in `config.py`). Inside
+the style signal, the weights are 0.55 for sentence length spread, 0.30 for
+punctuation and 0.15 for word variety (`stylometry.py`). Word variety gets the
+least because on my calibration texts it separated almost nothing. The AI text
+had *more* variety than the human text.
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -161,6 +172,38 @@ unreliable on short text, where a few sentences give a noisy spread.
 
 **A case where my two signals split, and what my rule does with it:**
 
+The six calibration inputs in `calibration.py` (all invented for this, none is
+my own writing), with both signals and the combined score:
+
+```
+input               model  style  combined   guess
+clearly AI          0.770  0.595     0.682   ai
+clearly human       0.312  0.087     0.200   human
+formal human        0.315  0.174     0.244   human
+lightly edited AI   0.709  0.528     0.619   unsure
+chopped AI          0.448  0.032     0.370   unsure
+plain human         0.831  0.728     0.779   ai
+```
+
+The split is "chopped AI": the same content as "clearly AI", broken into
+uneven sentences with more punctuation. The style signal read it as human
+(0.03) and the model signal sat in the middle (0.45). That's a gap of 0.42. A
+plain average gives 0.24, which would be labeled human, so the AI text gets
+through with a confident label. The rule sees the gap is over 0.30 and pulls
+the score back to 0.37, which is "unsure". It still gets through, but it
+doesn't get a stamp of approval.
+
+Two things in that table I'm not happy about:
+
+- **Plain human is called AI.** A short paragraph of ordinary sentences
+  ("I woke up late today. I made some coffee...") scores 0.83 on the model
+  signal and 0.73 on style, so both agree and the combined score is 0.78. That
+  is the false positive from Milestone 1, showing up in the very first
+  calibration run. No combining rule fixes two signals agreeing on the wrong
+  answer. I'm leaving the thresholds where they are rather than moving them
+  until this one text comes out right, since I'd be fitting to one example. It's
+  the first thing unit 8 should look at.
+- **The margin on "clearly AI" is thin.** 0.68 against an AI threshold of 0.65.
 
 
 ---

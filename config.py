@@ -64,6 +64,12 @@ MAX_TEXT_CHARS = 20000
 WEIGHT_MODEL_SIGNAL = 0.5
 WEIGHT_STYLE_SIGNAL = 0.5
 
+# If the two signals are further apart than DISAGREE_GAP, the combined score is
+# pulled back toward 0.5 by this fraction of its distance from it. A value of
+# 0.5 means "halfway". See scoring.py::combine_signals.
+DISAGREE_GAP = 0.30
+DISAGREE_SHRINK = 0.5
+
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
 # Where one label becomes another. Scores run 0.0 (confidently human) to 1.0
