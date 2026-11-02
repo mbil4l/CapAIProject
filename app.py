@@ -283,14 +283,34 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _reject("unknown", "bad_json", "Send a JSON object with content_id and reasoning.")
 
-    # TODO: delete this and build the route.
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
+
+    if not isinstance(content_id, str) or not content_id.strip():
+        return _reject("unknown", "missing_content_id", "content_id is required.")
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return _reject("unknown", "missing_reasoning", "Tell us why you think this was a mistake.")
+
+    # Only a decision can be appealed. Appeals and rejections can share the id
+    # in the log, so pick the entry that actually carries a decision.
+    decisions = [e for e in audit.entries_for(content_id.strip()) if e.get("event") is None]
+    if not decisions:
+        audit.log_rejection("unknown", "unknown_content_id", content_id=content_id.strip()[:64])
+        return jsonify({"error": "unknown_content_id",
+                        "message": "We don't have a submission with that content_id."}), 404
+
+    original = decisions[0]
+    audit.log_appeal(original["content_id"], original["creator_id"], reasoning.strip())
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": original["content_id"],
+        "status": "under_review",
+        "message": "We've got your appeal and marked this piece for review. "
+                   "The original result is kept as it was.",
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────
