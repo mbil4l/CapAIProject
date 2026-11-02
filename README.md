@@ -39,7 +39,68 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+Provenance Guard is a small Flask service that looks at a piece of writing and
+says how likely it is that a person wrote it. It never says "this is AI". It
+says what it thinks and how sure it is, and it gives the writer a way to
+disagree.
 
+The path a submission takes:
+
+1. **Arrives.** A client POSTs `{"text", "creator_id"}` to `/submit`.
+2. **Route checks it.** `app.py::submit` rejects anything that isn't usable
+   (no text, empty, not a string, too long) with a 400 and a log line, before
+   any model runs.
+3. **Signal one.** `detector.py` runs gpt2 on the text and turns its
+   perplexity into a 0–1 score. This is the slow step, and the model stays
+   loaded after the first call.
+4. **Signal two.** `stylometry.py` measures the text's shape (sentence length
+   spread, word variety, punctuation) and returns its own 0–1 score.
+5. **Combine.** `scoring.py::combine_signals` turns the two scores into one
+   combined score.
+6. **Label.** `scoring.py::score_to_label` maps that score to one of three
+   labels written for a normal reader.
+7. **Log and answer.** `audit.py` appends the decision to `logs/audit.jsonl`
+   with a new `content_id`, and the route returns it all as JSON. If the
+   writer disagrees, `/appeal` finds that `content_id` in the log, records the
+   appeal and flips the status to `under_review`.
+
+### The two endpoints
+
+`POST /submit`
+
+| | Field | Notes |
+|---|---|---|
+| in | `text` | string, required, not blank |
+| in | `creator_id` | string, required |
+| out | `content_id` | short unique id, used later to appeal |
+| out | `guess` | `ai`, `human` or `unsure` |
+| out | `confidence` | the combined score, 0 to 1, higher means more likely AI |
+| out | `label` | the sentence a reader sees |
+| out | `model_score`, `style_score` | the two signals, each 0 to 1 |
+| out | `status` | `decided` |
+
+`POST /appeal`
+
+| | Field | Notes |
+|---|---|---|
+| in | `content_id` | must already be in the log |
+| in | `reasoning` | string, required, the writer's own words |
+| out | `content_id`, `status` | status is now `under_review` |
+| out | `message` | confirmation in plain language |
+
+Errors are always JSON, `{"error": "...", "message": "..."}`, with a 400 for
+bad input and a 404 for an unknown `content_id`. Nothing should ever be a 500.
+
+### The false positive I'm designing around
+
+A real writer, say someone writing in their second language, sends in a plain
+paragraph made of short sentences and everyday words. gpt2 finds that very
+predictable, so signal one scores it high. Their sentences are all about the
+same length, so signal two agrees. The combined score comes out high, and
+they'd see the "probably AI" label on work they wrote themselves. They can
+send an appeal with the `content_id` and their reasoning, and it goes to
+`under_review`. Nobody re-checks it automatically, so a human has to pick it
+up. That's why the AI threshold sits high and the unsure band is wide.
 
 ---
 
@@ -53,19 +114,36 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** How predictable the text is to gpt2, running on my own
+machine (`detector.py::model_signal`). It takes the perplexity, which is how
+surprised the model is by each next word, and squashes it onto 0–1 so that low
+perplexity gives a high AI score.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** A language model
+writes by picking likely next words, so its output is easy for another model
+to predict. People reach for odd words and sudden turns more often.
 
-**What it can't see:**
+**What it can't see:** Authorship. Predictable is not the same as machine
+written. Plain writing in short sentences and common words, from a second
+language speaker, a younger writer or anyone being deliberately simple, scores
+as machine-like. Dense, ornate human prose with rare words can score as human
+even when an AI wrote it. It also only reads the first 400 tokens.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** The shape of the text without reading it
+(`stylometry.py::style_signal`): how much sentence length varies, how many
+different words there are compared with the total, and how much punctuation
+there is and how varied it is.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** Generated prose tends
+to have even, mid-length sentences and a narrower vocabulary. Human writing is
+lumpier, with a three-word sentence right next to a forty-word one.
 
-**What it can't see:**
+**What it can't see:** Meaning. It has no idea what the text says, so anything
+that changes the shape and not the content moves it: typos, chopping sentences
+up, pasting in a quotation. Those are cheap to do on purpose. It is also
+unreliable on short text, where a few sentences give a noisy spread.
 
 ### The combining rule
 
