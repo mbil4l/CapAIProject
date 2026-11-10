@@ -1,5 +1,75 @@
 # Running Provenance Guard
 
+## Capstone run path — Path B (local, with logs)
+
+This is the run path the capstone is graded on. The rest of this file (from
+"Before your first class" down) is the original starter guide, kept as it was.
+
+**Why local and not hosted:** a free host gives 512 MB. `torch` (~200-800 MB)
+plus the gpt2 weights (~550 MB on disk, loaded into RAM) is over that before the
+first request, and a free host forgets the download after every idle spin-down.
+No setting fixes that, so this does not run on a free host.
+
+### Environment
+
+| Needs | Detail |
+|---|---|
+| Python | 3.11, 3.12 or 3.13 (tested on **3.12.10**, Windows 11). Not 3.14 or newer |
+| Dependencies | `pip install -r requirements.txt` (bounded pins: flask, flask-limiter, requests, transformers, torch CPU, certifi) |
+| Model | `gpt2`, **~550 MB**, downloaded once to the Hugging Face cache (`~/.cache/huggingface/hub`) by `python detector.py` |
+| RAM | about 1 GB free while the model is loaded |
+| Disk | about 2 GB for torch + the model |
+| Keys / accounts | none |
+
+### One-time setup (from a clean checkout)
+
+```bash
+git clone --branch capstone https://github.com/mbil4l/ai201-project4-provenance-guard-starter-v2026.git
+cd ai201-project4-provenance-guard-starter-v2026
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt     # macOS/Linux: .venv/bin/python
+.venv/Scripts/python detector.py                             # downloads gpt2 once (~550 MB)
+```
+
+### The one command that starts it
+
+```bash
+AI201_DEBUG=0 .venv/Scripts/python app.py
+```
+
+(PowerShell: `$env:AI201_DEBUG="0"; .venv\Scripts\python app.py`.)
+It listens on `http://127.0.0.1:5000`. `AI201_DEBUG=0` matters: debug mode starts
+a second reloader process that loads the model twice. Set `PORT` to move it.
+
+### Check it is alive, and see the record
+
+```bash
+curl -s http://127.0.0.1:5000/health
+curl -s -X POST http://127.0.0.1:5000/submit -H "Content-Type: application/json"   -d '{"text": "Last weekend my brother and I drove to the lake and ate sandwiches in the car.", "creator_id": "me"}'
+tail -n 1 logs/requests.jsonl
+```
+
+Every `/submit` call, including refusals, 429s and crashes, appends one line to
+`logs/requests.jsonl` (fields in `telemetry.py`). Decisions also go to
+`logs/audit.jsonl` as before. The `X-Request-Id` response header matches the
+`request_id` in the record.
+
+### Measure and test
+
+| Command | What it does |
+|---|---|
+| `python measure_cost.py` | Starts the service fresh, sends 1 cold + 10 warm requests, prints the cost. Writes to `logs/` |
+| `python run_capstone.py --label before` | The five capstone criteria, three trials each. Starts its own service copies. Writes `results/capstone_<label>.md` and `logs/capstone_<label>/` |
+
+Both start the service themselves (`servectl.py`), so don't also run `app.py` on
+ports 5056-5059.
+
+### Tested from a clean clone
+
+See "Running It" in `README.md` for what that test found.
+
+---
+
 Everything about how the starter works.
 
 This is a **web service**. It runs on your machine and you talk to it with
