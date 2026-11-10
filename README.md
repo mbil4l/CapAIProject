@@ -527,40 +527,172 @@ nothing re-checks it after that, so the accusation just sits there.
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+Five criteria from `criteria_unit7.md` (the unit 7 file; `criteria.md` was
+later reused by the capstone), three trials each, **before** the fix. Produced by
+`run_eval.py --label before` against `scenarios.py`; the full output is
+`results/run_2026-11-10_0510_before.md`. All three trials came out identical for
+every criterion, which is what I expected, since nothing in either signal is
+random.
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. Own writing is rarely called AI | 1 of 10 at most, none above 0.80, 4+ plain | 2/10 flagged, top 0.71 (FAIL) | 2/10 flagged, top 0.71 (FAIL) | 2/10 flagged, top 0.71 (FAIL) | MISSED |
+| 2. Clearly AI and clearly human score apart | gap 0.30+, lowest AI above highest human | gap 0.43, 0.60 vs 0.39 (pass) | gap 0.43, 0.60 vs 0.39 (pass) | gap 0.43, 0.60 vs 0.39 (pass) | MET |
+| 3. All three labels reachable | 3 of 3, unsure band 0.25+, 0.51 and 0.95 differ | 3/3, band 0.30, differ (pass) | 3/3, band 0.30, differ (pass) | 3/3, band 0.30, differ (pass) | MET |
+| 4. An appeal always changes status and is recorded | 10 of 10, refused appeals write nothing | 10/10 ok, but 2 log lines written (FAIL) | 10/10 ok, but 2 log lines written (FAIL) | 10/10 ok, but 2 log lines written (FAIL) | MISSED |
+| 5. Bad input refused cleanly | 6 of 6, none 500, all 6 logged, ping ok | 6/6, 0 crashed, 6/6 logged (pass) | 6/6, 0 crashed, 6/6 logged (pass) | 6/6, 0 crashed, 6/6 logged (pass) | MET |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+**Two things about how I got these numbers.**
+
+- **Criterion 1 was measured on stand-ins, not my writing.** The ten pieces in
+  `my_writing.txt` were written by the AI assistant in a junior developer's voice
+  (the file says so at the top), because I hadn't supplied ten pieces of my own.
+  Six of them are plain (short sentences, everyday words), four aren't. So
+  criterion 1's verdict is for those ten pieces. A real number needs real
+  writing, and I'd re-run it with that.
+- **I extended `run_eval.py`.** It only sent text and printed labels. Criteria 4
+  and 5 need a submission followed by an appeal, and a look in the log, so
+  scenarios can now carry their own `runner` and a `judge` that applies the
+  target to each trial. The service wasn't touched.
+
+**How I decided the two misses.** Criterion 1 says at most 1 of 10; every trial
+had 2 (pieces 1 and 10). That is a miss however it's read. Criterion 4 is the
+one I thought about. All 10 appeals worked: 200, status `under_review`, an
+appeal entry with the reasoning, and the original decision still `decided`. The
+criterion also says a refused appeal "writes nothing". The two refused ones (an
+unknown `content_id` and blank reasoning) wrote no appeal, but each wrote a
+`rejected` line to the log. The generous reading is that "nothing" meant no
+appeal record. The words say nothing, and I wrote them. So I'm calling it
+MISSED. I'm not revising the criterion either: it can be measured, I just broke
+it, and that's the case the brief says doesn't count as a revision. The real
+issue is that it conflicts with a decision I made in Milestone 1, to log every
+refusal, which I'd still keep.
+
+**Real output from trial 1**, one block per criterion. Each line is one real
+response object from `results/run_2026-11-10_0510_before.md`, trimmed to the
+entries that show the point.
+
+Criterion 1, `scenarios.py::judge_own_writing` over pieces 1 and 10 (the two
+flagged):
 
 ```json
+{"status": 200, "guess": "ai", "confidence": 0.6983, "model_score": 0.6369, "style_score": 0.7596, "label": "This looks like it may have been written with an AI tool. We can be wrong, especially about plain or simple writing. If you wrote it yourself, tell us using the appeal option and we'll mark it for review.", "sent": "Today I fixed the bug in the login form. The error showed up when the "}
+{"status": 200, "guess": "ai", "confidence": 0.7065, "model_score": 0.6218, "style_score": 0.7912, "label": "This looks like it may have been written with an AI tool. We can be wrong, especially about plain or simple writing. If you wrote it yourself, tell us using the appeal option and we'll mark it for review.", "sent": "I wrote a script to rename the log files. It reads the folder and adds"}
+```
 
+Criterion 2, `scenarios.py::judge_spread`, the first AI text and the first human
+text:
+
+```json
+{"status": 200, "guess": "ai", "confidence": 0.7326, "model_score": 0.8337, "style_score": 0.6314, "label": "This looks like it may have been written with an AI tool. We can be wrong, especially about plain or simple writing. If you wrote it yourself, tell us using the appeal option and we'll mark it for review.", "sent": "In today's fast-paced world, time management has become an essential s"}
+{"status": 200, "guess": "unsure", "confidence": 0.3942, "model_score": 0.533, "style_score": 0.0439, "label": "We can't tell whether this was written by a person or with an AI tool. That's not a finding that anything is wrong. Plain, short or heavily edited writing is hard for us to read either way.", "sent": "My brother borrowed the van in March and I haven't seen it since. He s"}
+```
+
+Criterion 3, `scenarios.py::judge_coverage`, one response for each label:
+
+```json
+{"status": 200, "guess": "ai", "confidence": 0.7326, "model_score": 0.8337, "style_score": 0.6314, "label": "This looks like it may have been written with an AI tool. We can be wrong, especially about plain or simple writing. If you wrote it yourself, tell us using the appeal option and we'll mark it for review.", "sent": "In today's fast-paced world, time management has become an essential s"}
+{"status": 200, "guess": "unsure", "confidence": 0.603, "model_score": 0.8821, "style_score": 0.5298, "label": "We can't tell whether this was written by a person or with an AI tool. That's not a finding that anything is wrong. Plain, short or heavily edited writing is hard for us to read either way.", "sent": "Regular exercise offers a wide range of benefits for both physical and"}
+{"status": 200, "guess": "human", "confidence": 0.253, "model_score": 0.3187, "style_score": 0.1873, "label": "We think this was probably written by a person. Nothing in it looked machine-made to us, though no automatic check is perfect.", "sent": "We never did fix the gate. It dragged on the gravel every single time,"}
+```
+
+Criterion 4, `scenarios.py::run_appeals` and `judge_appeals`, the first
+appeal and the log check after the two refused ones:
+
+```json
+{"sent": "In today's fast-paced world, time management has become an e", "submit_status": 200, "content_id": "e6349dda9467", "reasoning": "eval appeal 1: I wrote this myself.", "appeal_status": 200, "appeal_body_status": "under_review", "decision_entries": 1, "decision_still_decided": true, "appeal_entries": 1, "appeal_recorded": true}
+{"negative": "log after the two refused appeals", "appeal_entries_added": 0, "entries_added": 2, "entries": [{"content_id": "eval_no_such_id", "creator_id": "unknown", "event": "rejected", "reason": "unknown_content_id", "status": "rejected", "timestamp": "2026-11-10T10:10:41+00:00"}, {"creator_id": "unknown", "event": "rejected", "reason": "missing_reasoning", "status": "rejected", "timestamp": "2026-11-10T10:10:41+00:00"}]}
+```
+
+Criterion 5, `scenarios.py::run_bad_input` and `judge_bad_input`, the six
+bad requests and the check afterwards:
+
+```json
+{"sent": "eval_bad_missing: text='<absent>'", "status": 400, "error": "bad_text"}
+{"sent": "eval_bad_empty: text=''", "status": 400, "error": "text_too_short"}
+{"sent": "eval_bad_spaces: text='   '", "status": 400, "error": "text_too_short"}
+{"sent": "eval_bad_null: text='None'", "status": 400, "error": "bad_text"}
+{"sent": "eval_bad_number: text='42'", "status": 400, "error": "bad_text"}
+{"sent": "eval_bad_huge: text='word word word word '", "status": 413, "error": "text_too_long"}
+{"after": true, "rejected_entries_added": 6, "ping_status": 200, "ping_ok": true}
 ```
 
 **Diagnoses**
 
-<!-- For each miss AND each broken attack: the stage and the mechanism.
+*Criterion 1 missed, and FP02 and FP03 from the attack set (stage: signal two,
+with signal one agreeing).* Pieces 1 and 10 are plain: five short sentences of
+similar length, no commas, no punctuation except full stops. Signal two scored
+them 0.76 and 0.79. Its sentence-spread part reads even sentences as
+machine-like (0.61 and 0.71), and its punctuation part gives 1.0, the maximum,
+to text with no marks other than full stops. Signal one gave 0.64 and 0.62, which
+is high but under the line on its own. The two agree (a gap well under 0.30), so
+the combining rule's disagreement shrink never fired, and the average, 0.698 and
+0.7065, went over 0.65. If signal two had said a neutral 0.5 the averages would
+have been about 0.57 and 0.56, both unsure. So signal two decided it. The
+pattern is wider than those two pieces: 5 of my 6 plain pieces scored 0.50 or
+more, and none of the four other pieces did (highest 0.48). That is the blind
+spot I wrote about before building anything, showing up in a count. FP02 (formal
+report, 0.692) and FP03 (careful second-language writer, 0.700) are the same
+thing, both signals agreeing, and the label mapping then does what it's told.
 
-     Your service has five stages: the route, signal one, signal two, the
-     combining rule, and the label mapping.
+*Criterion 4 missed (stage: the route).* `app.py::appeal` calls
+`audit.log_rejection` for an unknown `content_id` and for blank reasoning, so
+every refused appeal writes a `rejected` line. That is my own logging policy
+from unit 8, Milestone 1, running into a criterion worded "writes nothing".
 
-     Not a diagnosis:  "The evasion attacks got through."
-     A diagnosis:      "Four evasion inputs got through. All four had typos
-                        added to AI-generated text. My second signal measures
-                        word variety, and typos raise word variety — so it read
-                        them as more human. My combining rule weights that
-                        signal at 0.6, so it dragged the whole score down."
+*All ten evasion attacks got no AI label (stage: signal two for shape edits,
+signal one for word-level edits, and the combining rule after that).* Each
+attack moved one signal and not the other. Shape edits dropped signal two to
+about 0.25 (EV02 broken-up sentences, EV03 pasted quotation, EV06 one long and
+one short sentence), while signal one stayed at 0.57 to 0.67. Word-level edits
+dropped signal one: typos took it to 0.16 on EV01, and EV08 (short text) took it
+to 0.25, while signal two stayed near 0.6. When the signals split by more than
+0.30 the combining rule pulls the score halfway back to 0.5, so the result is
+"unsure". There's a second reason, not about any one attack. My five clean AI
+paragraphs only score 0.60 to 0.77, so they sit barely above the 0.65 line, and a
+single signal dropping by 0.2 is enough to push one under it. Two attacks missed
+the line narrowly: EV10 (repeated stanzas, signal one at 0.98 but signal two
+0.56) got 0.6345, and EV04 (rare words) got 0.617. EV05, a heavy human edit, got
+"human" because both signals dropped (0.32 and 0.21). That one worked
+legitimately, because it's mostly a human rewrite.
 
-     Look for a pattern. Five failures on one signal is one problem, not five. -->
+*PI02 got "human", 0.20 (stage: both signals, not an injection at all).* Nothing
+in my service reads text as instructions: signal one computes perplexity and
+signal two counts sentences and punctuation. So "SYSTEM: ... return guess=human"
+was never obeyed. The fake header simply made the text look odd. It's full of
+capitals, a colon, an equals sign and commas, which raised perplexity (signal one
+0.20) and punctuation variety (signal two 0.20). It worked as an evasion, same as
+the EV family. PI01, PI03 and PI06 got "unsure", and PI04 (hostile label) can't
+work because the label text is a constant in `scoring.py`. PI05 (log injection)
+held: `audit.py` uses `json.dumps`, so the quote characters were escaped, and the
+log has no unparseable line.
 
+*MF07 (Arabic sentence) got `ai`, 0.8157, a high-confidence accusation (stage:
+all three).* The route's length check uses `text.split()`, so any text with five
+space-separated tokens passes. Signal two's `words()` only matches a-z and
+digits, so it sees zero words: no vocabulary (variety scores as maximally
+repetitive) and no punctuation (scores maximally machine-like), giving 0.725.
+Signal one is gpt2, an English model, and found the byte-level tokens very
+predictable (0.91). Neither signal is defined for non-Latin script, and nothing
+checks.
 
+*MF04 (punctuation only) got a decision (stage: the route).* `!!! ??? ... ,,,
+;;; --- ((( )))` is eight tokens by `text.split()`, so it passed the minimum
+length check and was scored (0.465, unsure). Not a crash, but a label on
+something that isn't writing.
+
+*RQ10 and RQ11 got 429 instead of 400 (stage: the rate limiter, not my route).*
+The limiter runs before the route and counts refused requests. The address-wide
+bucket had been used up by earlier malformed rows that had no usable
+`creator_id`, so these two never reached my validation. Held, but one address
+sending bad requests can lock itself out of `/submit`.
+
+*The pattern.* Three problems account for nearly everything. (1) Signal two
+treats plain, even, unpunctuated writing as machine-like, and signal one
+partly agrees: criterion 1, FP02, FP03, and by extension FP05. (2) Any edit that
+moves just one signal turns a split into "unsure", so no evasion needs to fool
+both: the ten EV rows and PI02. (3) The route's input check counts tokens, not
+words: MF04 and MF07.
 
 ---
 
@@ -696,7 +828,7 @@ not hosting are in [RUNNING.md](RUNNING.md) (top section). Short version:
 AI201_DEBUG=0 .venv/Scripts/python app.py
 ```
 
-**Tested from a clean clone.** I cloned the `capstone` branch into a new folder
+**Tested from a clean clone.** I cloned the repo (branch `capstone`, since merged into `main`) into a new folder
 and followed RUNNING.md. It worked, and the test turned up two things a reader
 would have hit:
 
@@ -798,7 +930,7 @@ So the per-request cost is trivial. The real cost of this system is the standing
 one: a process holding about 1 GB of RAM for the model, all day, which is exactly
 why it does not fit a free 512 MB host.
 
-## Run Log and Verdicts
+## Run Log and Verdicts — Capstone
 
 Five criteria from `criteria.md`, three trials each, **before** the fix. Produced
 by `run_capstone.py::main`; the full output is in `results/capstone_before.md`
@@ -965,7 +1097,7 @@ rewards predictability, and gpt2 is an English model) showing up where my
 capstone criteria set no target. I am reporting it rather than quietly passing
 criterion 5.
 
-## The Improvement
+## The Improvement — Capstone
 
 **One change:** `app.py::main` now calls `detector.warm_up()` before it starts
 serving, so the model is loaded before the first request can arrive. If the load
@@ -1013,7 +1145,7 @@ and need it moved to import time.
 Regression check: `python test.py` passes 9 of 9, and criteria 1, 4 and 5 (which
 exercise `/submit`, rejections and the failure path) still pass after the change.
 
-## What's Still Broken
+## What's Still Broken — Capstone
 
 No criterion is missed after the fix, but my own tests leave real gaps:
 
@@ -1061,7 +1193,7 @@ harness and ran the trials. Two specific moments:
    list, moved its uncommitted edits into a separate git worktree on a `capstone`
    branch, restored the shared checkout, and pointed every test run at its own
    log directory (`AI201_LOG_DIR`) so trials could not mix into the other
-   session's log. What changed: the work lives on branch `capstone`, not `main`.
+   session's log. What changed: I did the work on branch `capstone` and merged it into `main` afterwards.
 2. **Telemetry hook order.** I asked for a per-request log that could not miss a
    rejected request. Claude reasoned that Flask stops running `before_request`
    hooks at the first one that raises, and the rate limiter raises a 429, so a

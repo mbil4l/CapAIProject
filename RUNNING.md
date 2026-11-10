@@ -24,7 +24,7 @@ No setting fixes that, so this does not run on a free host.
 ### One-time setup (from a clean checkout)
 
 ```bash
-git clone --branch capstone https://github.com/mbil4l/ai201-project4-provenance-guard-starter-v2026.git
+git clone https://github.com/mbil4l/ai201-project4-provenance-guard-starter-v2026.git
 cd ai201-project4-provenance-guard-starter-v2026
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt     # macOS/Linux: .venv/bin/python
