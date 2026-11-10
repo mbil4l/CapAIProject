@@ -574,3 +574,81 @@ hundred MB in RAM, against a 512 MB free host.
 
 Size check: the telemetry layer is one new module plus two hooks in `app.py`.
 That is one piece of work, not three.
+
+
+## Running It
+
+**Path B — local, with logs.** Start command, environment and the reasoning for
+not hosting are in [RUNNING.md](RUNNING.md) (top section). Short version:
+
+```bash
+AI201_DEBUG=0 .venv/Scripts/python app.py
+```
+
+**Tested from a clean clone.** I cloned the `capstone` branch into a new folder
+and followed RUNNING.md. It worked, and the test turned up two things a reader
+would have hit:
+
+1. **I reused my existing virtual environment** (Python 3.12.10 with torch
+   already installed) instead of reinstalling torch, to save a ~200 MB download
+   and a long install. So the `pip install` step in RUNNING.md was *not*
+   re-executed from zero this unit; it is the unchanged unit 7 requirements
+   file. The model was also already in my Hugging Face cache. A first-time
+   reader pays the 550 MB download.
+2. The first draft of RUNNING.md forgot that port 5000 may already be taken (it
+   was: another process of mine was running the unit 8 service). `PORT` is now
+   named in the file.
+
+In the clone, `GET /health` answered, one `/submit` returned 200 and wrote a
+record to `logs/requests.jsonl`, and `python test.py` passed 9 of 9.
+
+## Instrumentation
+
+**Two logs, two jobs.**
+
+- `logs/audit.jsonl` (unchanged, `audit.py`) — one record per *decision* and per
+  appeal, nine fixed fields. It is what `/appeal` reads.
+- `logs/requests.jsonl` (new, `telemetry.py`) — one record per `/submit` *call*,
+  whatever its fate. Written by Flask `before_request`/`after_request` hooks in
+  `app.py`, so the handler cannot skip it. The hooks are registered before the
+  rate limiter, because the limiter aborts the request chain with a 429 and a
+  hook registered after it would never start its timer.
+
+Fields in a `requests.jsonl` record:
+
+| Field | What it holds |
+|---|---|
+| `timestamp`, `request_id` | UTC time; 12-hex id, also sent back as `X-Request-Id` |
+| `route`, `creator_id` | what was called, and who it counted against |
+| `text_type`, `text_chars`, `text_hash` | the input: its type, length, and a 12-hex hash (never the text) |
+| `status_code`, `outcome`, `reason` | the output: HTTP code; `decided` / `rejected` / `rate_limited` / `error`; the error code |
+| `content_id`, `guess`, `confidence`, `model_score`, `style_score` | the decision, when there was one |
+| `duration_ms`, `cpu_ms` | wall-clock and process CPU time over the request |
+| `detector_cold` | true if the gpt2 model had to be loaded during this request |
+
+Fourteen real records, pasted as text from `logs/requests.jsonl`. The first is
+the cold first request after a fresh start, then one warm one, then a mixed
+session: a normal submission, missing text, empty text, a 25,000-character text
+(413), a null text, five more submissions from one creator (the last two came back
+429).
+
+```json
+{"timestamp": "2026-11-10T09:07:18+00:00", "request_id": "04c1bead40dd", "route": "/submit", "creator_id": "cost_0", "text_type": "str", "text_chars": 411, "text_hash": "e570ed33b3c2", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "08aeed665a55", "guess": "unsure", "confidence": 0.5701, "model_score": 0.848, "style_score": 0.4325, "duration_ms": 3532.6, "cpu_ms": 6984.4, "detector_cold": true}
+{"timestamp": "2026-11-10T09:07:19+00:00", "request_id": "6cd98123a6ee", "route": "/submit", "creator_id": "cost_1", "text_type": "str", "text_chars": 411, "text_hash": "e570ed33b3c2", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "00cb5ee65fdd", "guess": "unsure", "confidence": 0.5701, "model_score": 0.848, "style_score": 0.4325, "duration_ms": 88.3, "cpu_ms": 1375.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "e956ee22da1a", "route": "/submit", "creator_id": "demo_a", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "a98e69ca189a", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 3514.9, "cpu_ms": 10171.9, "detector_cold": true}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "347c2b1b6797", "route": "/submit", "creator_id": "demo_b", "text_type": "NoneType", "text_chars": null, "text_hash": null, "status_code": 400, "outcome": "rejected", "reason": "bad_text", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.7, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "3d6568f6efc7", "route": "/submit", "creator_id": "demo_c", "text_type": "str", "text_chars": 0, "text_hash": "e3b0c44298fc", "status_code": 400, "outcome": "rejected", "reason": "text_too_short", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.7, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "8d7abfd28fa8", "route": "/submit", "creator_id": "demo_d", "text_type": "str", "text_chars": 25000, "text_hash": "022625a9ba7a", "status_code": 413, "outcome": "rejected", "reason": "text_too_long", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.5, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "d97ebbe2cef5", "route": "/submit", "creator_id": "demo_e", "text_type": "NoneType", "text_chars": null, "text_hash": null, "status_code": 400, "outcome": "rejected", "reason": "bad_text", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.4, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "9d8c1080b224", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "ef60ad600118", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 38.2, "cpu_ms": 671.9, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "c4ede4b335bb", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "34e84a19e9f7", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 40.1, "cpu_ms": 843.8, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "b6d62bf9aace", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "07265b4edba6", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 65.5, "cpu_ms": 1156.2, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "97ffce2eab5b", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "0c1d7e72f6f4", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 53.7, "cpu_ms": 1046.9, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "9692bcaeae4e", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "7742b9a8bd4a", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 48.8, "cpu_ms": 875.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "0a9c803c19fc", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 429, "outcome": "rate_limited", "reason": "rate_limited", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.8, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "e657fc271feb", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 429, "outcome": "rate_limited", "reason": "rate_limited", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.5, "cpu_ms": 187.5, "detector_cold": false}
+```
+
+## What It Costs
+
+*(Filled in below, in "What It Costs — measured".)*
