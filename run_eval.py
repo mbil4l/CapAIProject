@@ -111,32 +111,44 @@ def main():
         print(f"\n{scenario['name']}  (criterion {scenario.get('criterion') or '—'})")
 
         trials = []
+        summaries = []
         for trial in range(1, args.trials + 1):
             results = []
-            for i, body in enumerate(bodies_for(scenario), 1):
-                preview = describe(body)
-                try:
-                    response = requests.post(f"{args.url}/submit", json=body,
-                                             timeout=args.timeout)
-                    payload = response.json() if response.content else {}
-                    results.append({
-                        "status": response.status_code,
-                        "guess": payload.get("guess"),
-                        "confidence": payload.get("confidence"),
-                        "model_score": payload.get("model_score"),
-                        "style_score": payload.get("style_score"),
-                        "label": payload.get("label"),
-                        "sent": preview,
-                    })
-                except Exception as exc:  # noqa: BLE001
-                    results.append({"status": None, "error": f"{type(exc).__name__}: {exc}",
-                                    "sent": preview})
+            if scenario.get("runner"):
+                # A scenario that needs more than "send text, read the reply",
+                # like an appeal that needs a content_id from a submission first.
+                results = scenario["runner"](args.url, requests, args.timeout)
+            else:
+                for i, body in enumerate(bodies_for(scenario), 1):
+                    preview = describe(body)
+                    try:
+                        response = requests.post(f"{args.url}/submit", json=body,
+                                                 timeout=args.timeout)
+                        payload = response.json() if response.content else {}
+                        results.append({
+                            "status": response.status_code,
+                            "guess": payload.get("guess"),
+                            "confidence": payload.get("confidence"),
+                            "model_score": payload.get("model_score"),
+                            "style_score": payload.get("style_score"),
+                            "label": payload.get("label"),
+                            "sent": preview,
+                        })
+                    except Exception as exc:  # noqa: BLE001
+                        results.append({"status": None, "error": f"{type(exc).__name__}: {exc}",
+                                        "sent": preview})
 
             trials.append(results)
-            guesses = [r.get("guess") or "—" for r in results]
-            print(f"  trial {trial}: {', '.join(guesses)}")
+            judge = scenario.get("judge")
+            if judge:
+                ok, text = judge(results)
+                summary = f"{text} ({'pass' if ok else 'FAIL'})"
+            else:
+                summary = ", ".join(r.get("guess") or "-" for r in results)
+            summaries.append(summary)
+            print(f"  trial {trial}: {summary}")
 
-        rows.append({"scenario": scenario, "trials": trials})
+        rows.append({"scenario": scenario, "trials": trials, "summaries": summaries})
 
     write_report(rows, args)
 
@@ -169,7 +181,8 @@ def write_report(rows, args):
         scenario = row["scenario"]
         number = scenario.get("criterion")
         name = f"{number}. {scenario['name']}" if number else scenario["name"]
-        lines.append(f"| {name} |  | {' | '.join([' '] * n)} |  |")
+        cells = row.get("summaries") or [" "] * n
+        lines.append(f"| {name} | {scenario.get('target', '')} | {' | '.join(cells)} |  |")
 
     lines += ["", "---", "", "## What actually came back", "",
               "Real output. Paste the relevant parts into your README — the rubric",
