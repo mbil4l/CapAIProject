@@ -25,17 +25,41 @@ Routes:
 """
 
 import hashlib
+import os
 import uuid
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 
 import audit
 import config
 import detector
 import scoring
 import stylometry
+import telemetry
 
 app = Flask(__name__)
+
+
+# ── Telemetry — CAPSTONE ──────────────────────────────────────────────────────
+# One record per /submit call, written from hooks rather than from the handler,
+# so nothing the handler does (or fails to do) can skip it. Registered BEFORE the
+# rate limiter below: Flask stops running before_request hooks at the first one
+# that raises, and the limiter raises 429 — hooks registered after it would never
+# start their timer for exactly the requests we most want a trace of.
+
+@app.before_request
+def _telemetry_start():
+    if request.path == "/submit":
+        g.tele = telemetry.start(detector_cold=detector._model is None)
+
+
+@app.after_request
+def _telemetry_end(response):
+    if request.path == "/submit":
+        ctx = getattr(g, "tele", None) or telemetry.start(detector_cold=False)
+        telemetry.finish(ctx, request, response)
+        response.headers["X-Request-Id"] = ctx["request_id"]
+    return response
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
@@ -346,6 +370,16 @@ def main():
     print('    -H "Content-Type: application/json" \\')
     print("    -d '{\"message\": \"hello\"}'")
     print()
+    # Load the model BEFORE accepting traffic, so the first writer doesn't pay
+    # for it (capstone improvement: run_capstone.py criterion 2). If the load
+    # fails the service still starts: /submit then answers 503 per request, as
+    # it did before, and /ping, /health and /appeal keep working.
+    # (In debug mode Werkzeug runs this twice; only the reloaded child serves.)
+    if not config.DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        try:
+            print(f"  {detector.warm_up()}")
+        except detector.DetectorUnavailable as exc:
+            print(f"  WARNING: detector not loaded at start ({str(exc)[:120]})")
     # debug=True hands out an interactive debugger, so it's local-only — see config.py
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)
 

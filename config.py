@@ -122,6 +122,9 @@ RATE_LIMIT_STORAGE = "memory://"
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
 
-LOG_DIR = ROOT / "logs"
+# AI201_LOG_DIR lets a test run write its records somewhere of its own, so a
+# trial never mixes into the log you keep as evidence.
+LOG_DIR = Path(os.getenv("AI201_LOG_DIR", str(ROOT / "logs")))
 AUDIT_LOG = LOG_DIR / "audit.jsonl"
+REQUEST_LOG = LOG_DIR / "requests.jsonl"   # capstone: one line per /submit call
 RESULTS_DIR = ROOT / "results"

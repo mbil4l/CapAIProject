@@ -1,0 +1,24 @@
+Provenance Guard on http://127.0.0.1:5059
+  detector model:  no-such-model-capstone
+  rate limiting:   ON
+  audit log:       C:\Users\Muhammad Bilal\Desktop\Repos\Capstone Project\wt\logs\capstone_after\trial3_c4\audit.jsonl
+
+Check it's alive:
+  curl -X POST http://127.0.0.1:5059/ping \
+    -H "Content-Type: application/json" \
+    -d '{"message": "hello"}'
+
+  WARNING: detector not loaded at start (Couldn't load 'no-such-model-capstone': We couldn't connect to 'https://huggingface.co' to load the files, and couldn't )
+ * Serving Flask app 'app'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5059
+Press CTRL+C to quit
+127.0.0.1 - - [10/Nov/2026 04:13:56] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [10/Nov/2026 04:13:56] "POST /submit HTTP/1.1" 503 -
+127.0.0.1 - - [10/Nov/2026 04:13:56] "POST /submit HTTP/1.1" 503 -
+127.0.0.1 - - [10/Nov/2026 04:13:56] "POST /submit HTTP/1.1" 503 -
+127.0.0.1 - - [10/Nov/2026 04:13:56] "POST /submit HTTP/1.1" 503 -
+127.0.0.1 - - [10/Nov/2026 04:13:56] "POST /submit HTTP/1.1" 503 -
+127.0.0.1 - - [10/Nov/2026 04:13:56] "POST /ping HTTP/1.1" 200 -
+127.0.0.1 - - [10/Nov/2026 04:13:56] "GET /health HTTP/1.1" 200 -

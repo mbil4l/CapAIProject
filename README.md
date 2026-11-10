@@ -685,3 +685,391 @@ hundred MB in RAM, against a 512 MB free host.
 
 Size check: the telemetry layer is one new module plus two hooks in `app.py`.
 That is one piece of work, not three.
+
+
+## Running It
+
+**Path B — local, with logs.** Start command, environment and the reasoning for
+not hosting are in [RUNNING.md](RUNNING.md) (top section). Short version:
+
+```bash
+AI201_DEBUG=0 .venv/Scripts/python app.py
+```
+
+**Tested from a clean clone.** I cloned the `capstone` branch into a new folder
+and followed RUNNING.md. It worked, and the test turned up two things a reader
+would have hit:
+
+1. **I reused my existing virtual environment** (Python 3.12.10 with torch
+   already installed) instead of reinstalling torch, to save a ~200 MB download
+   and a long install. So the `pip install` step in RUNNING.md was *not*
+   re-executed from zero this unit; it is the unchanged unit 7 requirements
+   file. The model was also already in my Hugging Face cache. A first-time
+   reader pays the 550 MB download.
+2. The first draft of RUNNING.md forgot that port 5000 may already be taken (it
+   was: another process of mine was running the unit 8 service). `PORT` is now
+   named in the file.
+
+In the clone, `GET /health` answered, one `/submit` returned 200 and wrote a
+record to `logs/requests.jsonl`, and `python test.py` passed 9 of 9.
+
+## Instrumentation
+
+**Two logs, two jobs.**
+
+- `logs/audit.jsonl` (unchanged, `audit.py`) — one record per *decision* and per
+  appeal, nine fixed fields. It is what `/appeal` reads.
+- `logs/requests.jsonl` (new, `telemetry.py`) — one record per `/submit` *call*,
+  whatever its fate. Written by Flask `before_request`/`after_request` hooks in
+  `app.py`, so the handler cannot skip it. The hooks are registered before the
+  rate limiter, because the limiter aborts the request chain with a 429 and a
+  hook registered after it would never start its timer.
+
+Fields in a `requests.jsonl` record:
+
+| Field | What it holds |
+|---|---|
+| `timestamp`, `request_id` | UTC time; 12-hex id, also sent back as `X-Request-Id` |
+| `route`, `creator_id` | what was called, and who it counted against |
+| `text_type`, `text_chars`, `text_hash` | the input: its type, length, and a 12-hex hash (never the text) |
+| `status_code`, `outcome`, `reason` | the output: HTTP code; `decided` / `rejected` / `rate_limited` / `error`; the error code |
+| `content_id`, `guess`, `confidence`, `model_score`, `style_score` | the decision, when there was one |
+| `duration_ms`, `cpu_ms` | wall-clock and process CPU time over the request |
+| `detector_cold` | true if the gpt2 model had to be loaded during this request |
+
+Fourteen real records, pasted as text from `logs/requests.jsonl`. The first is
+the cold first request after a fresh start, then one warm one, then a mixed
+session: a normal submission, missing text, empty text, a 25,000-character text
+(413), a null text, five more submissions from one creator (the last two came back
+429).
+
+```json
+{"timestamp": "2026-11-10T09:07:18+00:00", "request_id": "04c1bead40dd", "route": "/submit", "creator_id": "cost_0", "text_type": "str", "text_chars": 411, "text_hash": "e570ed33b3c2", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "08aeed665a55", "guess": "unsure", "confidence": 0.5701, "model_score": 0.848, "style_score": 0.4325, "duration_ms": 3532.6, "cpu_ms": 6984.4, "detector_cold": true}
+{"timestamp": "2026-11-10T09:07:19+00:00", "request_id": "6cd98123a6ee", "route": "/submit", "creator_id": "cost_1", "text_type": "str", "text_chars": 411, "text_hash": "e570ed33b3c2", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "00cb5ee65fdd", "guess": "unsure", "confidence": 0.5701, "model_score": 0.848, "style_score": 0.4325, "duration_ms": 88.3, "cpu_ms": 1375.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "e956ee22da1a", "route": "/submit", "creator_id": "demo_a", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "a98e69ca189a", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 3514.9, "cpu_ms": 10171.9, "detector_cold": true}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "347c2b1b6797", "route": "/submit", "creator_id": "demo_b", "text_type": "NoneType", "text_chars": null, "text_hash": null, "status_code": 400, "outcome": "rejected", "reason": "bad_text", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.7, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "3d6568f6efc7", "route": "/submit", "creator_id": "demo_c", "text_type": "str", "text_chars": 0, "text_hash": "e3b0c44298fc", "status_code": 400, "outcome": "rejected", "reason": "text_too_short", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.7, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "8d7abfd28fa8", "route": "/submit", "creator_id": "demo_d", "text_type": "str", "text_chars": 25000, "text_hash": "022625a9ba7a", "status_code": 413, "outcome": "rejected", "reason": "text_too_long", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.5, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "d97ebbe2cef5", "route": "/submit", "creator_id": "demo_e", "text_type": "NoneType", "text_chars": null, "text_hash": null, "status_code": 400, "outcome": "rejected", "reason": "bad_text", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.4, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "9d8c1080b224", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "ef60ad600118", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 38.2, "cpu_ms": 671.9, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "c4ede4b335bb", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "34e84a19e9f7", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 40.1, "cpu_ms": 843.8, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "b6d62bf9aace", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "07265b4edba6", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 65.5, "cpu_ms": 1156.2, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "97ffce2eab5b", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "0c1d7e72f6f4", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 53.7, "cpu_ms": 1046.9, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "9692bcaeae4e", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 200, "outcome": "decided", "reason": null, "content_id": "7742b9a8bd4a", "guess": "unsure", "confidence": 0.6212, "model_score": 0.6794, "style_score": 0.563, "duration_ms": 48.8, "cpu_ms": 875.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "0a9c803c19fc", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 429, "outcome": "rate_limited", "reason": "rate_limited", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.8, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:08:11+00:00", "request_id": "e657fc271feb", "route": "/submit", "creator_id": "demo_flood", "text_type": "str", "text_chars": 104, "text_hash": "9ec2eb81af18", "status_code": 429, "outcome": "rate_limited", "reason": "rate_limited", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.5, "cpu_ms": 187.5, "detector_cold": false}
+```
+
+## What It Costs
+
+**One `/submit` costs $0.00 in API spend and, once the model is loaded, about
+0.09 seconds of wall-clock and about 1.4 seconds of CPU time** for a ~100-word
+text. A cold first request (model not yet loaded) costs about 3.5 s wall and 7 s
+CPU, a one-off per service start.
+
+**How I measured it.** `measure_cost.py` starts the service fresh with
+`python app.py`, sends one cold request and then ten warm ones (a different
+`creator_id` each, so the rate limiter never interferes), and reads
+`duration_ms` and `cpu_ms` back out of `logs/requests.jsonl`. These are the
+service's own telemetry, not a pricing page.
+
+```
+cold request : 3533 ms wall, 6984 ms cpu
+warm requests: n=10  mean 86 ms wall, 1447 ms cpu  (min 78, max 92)
+API spend per run: $0.00 (no hosted service is called)
+```
+
+`cpu_ms` is larger than wall-clock because PyTorch spreads one scoring pass over
+several CPU threads; it is process CPU time, not elapsed time. The capstone run
+gives a second reading for longer text: mean wall time was 0.09 s at 100 words,
+0.18 s at 250 words and 0.24 s at 600 words (cut to 400 tokens). One caveat:
+another process of mine (the unit 8 service) was running on the same laptop
+during these runs, so wall times may be a little inflated.
+
+**A hundred people a day.** Assume each of 100 people submits 5 drafts a day:
+100 x 5 = 500 submissions. At the 250-word mean of 0.18 s wall and the 1.45 s CPU
+measured above:
+
+- wall-clock: 500 x 0.18 s = **90 s** of scoring a day;
+- CPU: 500 x 1.45 s = **about 725 CPU-seconds** a day, roughly 12 minutes;
+- API spend: 500 x $0.00 = **$0.00**.
+
+So the per-request cost is trivial. The real cost of this system is the standing
+one: a process holding about 1 GB of RAM for the model, all day, which is exactly
+why it does not fit a free 512 MB host.
+
+## Run Log and Verdicts
+
+Five criteria from `criteria.md`, three trials each, **before** the fix. Produced
+by `run_capstone.py::main`; the full output is in `results/capstone_before.md`
+and every service record from the trials is in `logs/capstone_before/`.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Every /submit call leaves a complete record | 20 of 20, every trial | ✓ 20/20 complete | ✓ 20/20 complete | ✓ 20/20 complete | MET |
+| 2. First request after restart ≤ 3.0 s | 3 of 3 starts, every trial | ✗ 0/3 (worst 3.5s) | ✗ 0/3 (worst 3.5s) | ✗ 0/3 (worst 3.7s) | MISSED |
+| 3. Warm p95 ≤ 0.5 s, none > 1.5 s | p95 ≤ 0.5 s, every trial | ✓ p95 0.24s, max 0.26s | ✓ p95 0.26s, max 0.27s | ✓ p95 0.36s, max 0.48s | MET |
+| 4. Model unavailable → clean 503, logged, service stays up | 5 of 5, every trial | ✓ 5/5 (ping 200, health 200) | ✓ 5/5 (ping 200, health 200) | ✓ 5/5 (ping 200, health 200) | MET |
+| 5. Odd but valid text never crashes | 6 of 6, every trial | ✓ 6/6 | ✓ 6/6 | ✓ 6/6 | MET |
+
+**Verdicts: criteria 1, 3, 4 and 5 MET; criterion 2 MISSED.** No criterion was
+revised.
+
+Real output from trial 1, one block per criterion (function named at the top of
+each).
+
+**Criterion 1** — `run_capstone.py::crit1`, reading
+`logs/capstone_before/trial1_c1/requests.jsonl`:
+
+```
+{
+ "n_records": 20,
+ "problems": [],
+ "client_statuses": [
+  "valid:200",
+  "valid:200",
+  "valid:200",
+  "valid:200",
+  "valid:200",
+  "valid:200",
+  "valid:200",
+  "valid:200",
+  "no text:400",
+  "empty text:400",
+  "null text:400",
+  "numeric text:400",
+  "too long:413",
+  "json list:400",
+  "flood 1:200",
+  "flood 2:200",
+  "flood 3:200",
+  "flood 4:200",
+  "flood 5:200",
+  "flood 6:429"
+ ]
+}
+{"timestamp": "2026-11-10T09:10:02+00:00", "request_id": "cb8262d209bf", "route": "/submit", "creator_id": "c1_bad_1", "text_type": "NoneType", "text_chars": null, "text_hash": null, "status_code": 400, "outcome": "rejected", "reason": "bad_text", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 1.0, "cpu_ms": 0.0, "detector_cold": false}
+{"timestamp": "2026-11-10T09:10:02+00:00", "request_id": "57994a820fbe", "route": "/submit", "creator_id": "c1_bad_2", "text_type": "str", "text_chars": 0, "text_hash": "e3b0c44298fc", "status_code": 400, "outcome": "rejected", "reason": "text_too_short", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 0.7, "cpu_ms": 0.0, "detector_cold": false}
+```
+
+**Criterion 2** — `run_capstone.py::crit2`:
+
+```
+{
+ "starts": [
+  {
+   "start": 1,
+   "ready_s": 0.51,
+   "first_submit_s": 3.39,
+   "status": 200
+  },
+  {
+   "start": 2,
+   "ready_s": 0.51,
+   "first_submit_s": 3.43,
+   "status": 200
+  },
+  {
+   "start": 3,
+   "ready_s": 0.51,
+   "first_submit_s": 3.53,
+   "status": 200
+  }
+ ]
+}
+```
+
+**Criterion 3** — `run_capstone.py::crit3`:
+
+```
+{
+ "p95_s": 0.245,
+ "max_s": 0.265,
+ "median_s": 0.168,
+ "mean_s_by_words": {
+  "100": 0.094,
+  "250": 0.179,
+  "600": 0.24
+ },
+ "all_200": true
+}
+```
+
+**Criterion 4** — `run_capstone.py::crit4`, model name `no-such-model-capstone`:
+
+```
+{
+ "statuses": [
+  503,
+  503,
+  503,
+  503,
+  503
+ ],
+ "ms": [
+  2687,
+  3,
+  13,
+  12,
+  13
+ ],
+ "bodies": [
+  {
+   "error": "detector_unavailable",
+   "message": "The model isn't available right now."
+  },
+  {
+   "error": "detector_unavailable",
+   "message": "The model isn't available right now."
+  }
+ ]
+}
+{"timestamp": "2026-11-10T09:10:27+00:00", "request_id": "5225c341ea60", "route": "/submit", "creator_id": "c4_0", "text_type": "str", "text_chars": 292, "text_hash": "cc09c9587a5f", "status_code": 503, "outcome": "error", "reason": "detector_unavailable", "content_id": null, "guess": null, "confidence": null, "model_score": null, "style_score": null, "duration_ms": 2672.5, "cpu_ms": 2625.0, "detector_cold": true}
+```
+
+**Criterion 5** — `run_capstone.py::crit5`:
+
+```
+no punctuation       status 200  0.11s  model/style/conf = [0.3753, 0.6293, 0.5023]
+one 3000-char word   status 200  0.2s  model/style/conf = [0.997, 0.575, 0.643]
+60 emoji             status 200  0.08s  model/style/conf = [0.9971, 0.725, 0.861]
+arabic paragraph     status 200  0.09s  model/style/conf = [0.991, 0.725, 0.858]
+word x200            status 200  0.15s  model/style/conf = [0.997, 0.725, 0.861]
+newlines and tabs    status 200  0.13s  model/style/conf = [0.0, 0.725, 0.4313]
+```
+
+### Diagnosis — criterion 2 (the only miss)
+
+All nine fresh starts in three trials missed, by the same margin: the first
+`/submit` took 3.39 to 3.73 s against a 3.0 s target, while `/health` answered
+after 0.51 s. The telemetry record of a cold request says why: it has
+`detector_cold: true`, `duration_ms: 3386` and `cpu_ms: 5781`, against about 90 ms
+for the same text once warm.
+
+- **Stage:** the detector, `detector.py::_load`.
+- **Mechanism:** the model is loaded lazily, inside the first request that needs
+  it (`perplexity()` calls `_load()`). So the service reports itself healthy half
+  a second after launch while the part that does the work has not been loaded,
+  and whichever writer arrives first pays the ~3.3 s load. It is one problem seen
+  nine times, not nine problems.
+
+The other four criteria met their targets in all three trials. The narrowest
+margin was criterion 3, trial 3: p95 0.36 s against 0.5 s.
+
+**One thing the numbers hide.** Criterion 5 only asked that odd text not crash
+the service, and it didn't. But look at the scores above: 60 emoji, an Arabic
+paragraph and "hello" x200 all come back with a confidence of about 0.86, which
+is the high-confidence-AI band. A real person writing in Arabic would be told
+their work looks machine-made. That is the unit 7 blind spot (the model signal
+rewards predictability, and gpt2 is an English model) showing up where my
+capstone criteria set no target. I am reporting it rather than quietly passing
+criterion 5.
+
+## The Improvement
+
+**One change:** `app.py::main` now calls `detector.warm_up()` before it starts
+serving, so the model is loaded before the first request can arrive. If the load
+fails the service still starts and `/submit` answers 503 per request, as before
+(criterion 4 covers that, and still passes).
+
+**Why:** it follows the diagnosis directly. The cost of the first request was the
+model load, so the load moves to start-up.
+
+**Prediction, written in the commit message before the re-run:** criterion 2
+met; time-to-ready rises from about 0.5 s to about 4 s; nothing else moves.
+
+Both result sets side by side (`results/capstone_before.md`, above, and
+`results/capstone_after.md`, below):
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Every /submit call leaves a complete record | 20 of 20, every trial | ✓ 20/20 complete | ✓ 20/20 complete | ✓ 20/20 complete | MET |
+| 2. First request after restart ≤ 3.0 s | 3 of 3 starts, every trial | ✓ 3/3 (worst 0.3s) | ✓ 3/3 (worst 0.3s) | ✓ 3/3 (worst 0.3s) | MET |
+| 3. Warm p95 ≤ 0.5 s, none > 1.5 s | p95 ≤ 0.5 s, every trial | ✓ p95 0.25s, max 0.28s | ✓ p95 0.28s, max 0.30s | ✓ p95 0.28s, max 0.30s | MET |
+| 4. Model unavailable → clean 503, logged, service stays up | 5 of 5, every trial | ✓ 5/5 (ping 200, health 200) | ✓ 5/5 (ping 200, health 200) | ✓ 5/5 (ping 200, health 200) | MET |
+| 5. Odd but valid text never crashes | 6 of 6, every trial | ✓ 6/6 | ✓ 6/6 | ✓ 6/6 | MET |
+
+| | Before | After |
+|---|---|---|
+| Time until `/health` answers (9 starts) | 0.51-0.52 s | 3.71-3.72 s |
+| First `/submit` after `/health` (9 starts) | 3.39-3.73 s | 0.25-0.32 s |
+| Warm p95 (criterion 3, 3 trials) | 0.25 / 0.26 / 0.36 s | 0.25 / 0.28 / 0.28 s |
+| Criteria met | 4 of 5 | 5 of 5 |
+
+**Did it help?** Yes, for what it targeted: criterion 2 went from 0 of 9 starts
+to 9 of 9, and nothing else moved (criterion 3's differences sit inside the
+run-to-run spread already visible within the "before" trials).
+
+**The trade, named.** The wait did not disappear, it moved: the service now takes
+about 3.7 s to start answering `/health` instead of 0.5 s. That is the right place
+for it, since nobody is waiting on it, but a supervisor that restarts the service
+and checks `/health` straight away now has to wait longer. The first request is
+also still about 3x slower than a warm one (0.25-0.32 s vs 0.09 s); that is
+first-inference setup in PyTorch, which loading the weights does not remove. And
+this helps only when the service is started with `python app.py`: a server that
+imports `app` without running `main()` (gunicorn on Linux) would skip the warm-up
+and need it moved to import time.
+
+Regression check: `python test.py` passes 9 of 9, and criteria 1, 4 and 5 (which
+exercise `/submit`, rejections and the failure path) still pass after the change.
+
+## What's Still Broken
+
+No criterion is missed after the fix, but my own tests leave real gaps:
+
+1. **Non-English and degenerate text gets a confident "AI" label** (see above).
+   This is the false-accusation risk the whole project is about, and my five
+   criteria never set a number for it. *What I'd do:* add a criterion for
+   non-Latin-script and very repetitive text ("at most 1 of 6 may be labelled
+   high-confidence AI") and make the likely fix a gate that returns `unsure` when
+   the text is mostly outside the Latin script or has very few distinct words.
+   *Why I stopped:* it changes labelling behaviour, which this unit scoped out on
+   purpose.
+2. **Single client only.** Every number is one client, one request at a time, on
+   the Flask server. I did not test concurrency; one process with torch will
+   serialise requests. Not attempted (a stretch item, not claimed).
+3. **Limiter state is in memory.** A restart forgets every count, and a creator
+   can dodge the limit by changing `creator_id`.
+4. **Hosted path not attempted.** Path B only, by the arithmetic in RUNNING.md.
+5. **The clean-checkout test reused my existing virtualenv** and model cache, so
+   a first-time install on a bare machine is untested.
+6. **The logged `duration_ms` was not independently checked** against a client
+   stopwatch. The cost and latency numbers lean on it. The client-side timings in
+   `run_capstone.py` agree in rough size (about 0.09 s warm in both), but I wrote
+   no criterion for it.
+
+**The one thing I'd do first:** item 1. It is the only gap where the system hurts
+a person rather than just being slow, and it is the one my own criteria let
+through.
+
+**If this were real and I had another unit:** I'd write the criterion for item 1
+first and run it three times before touching any code, then decide between a
+script gate and a calibration change. I'd do that before anything operational,
+because a faster, better-logged service that accuses the wrong writers faster is
+not an improvement.
+
+## How I Used AI
+
+I used Claude Code (Sonnet 5.5) for this whole capstone, on my instruction to
+"just complete it" with the cheapest hardware, compute and input. **That includes
+the acceptance criteria.** The brief says to write them myself; this time I asked
+Claude to, so they are Claude's drafting, and I need to review and adopt or change
+them before I can defend them. Two specific moments:
+
+1. **Another session was writing in the same repo.** While starting the build,
+   Claude noticed new lines appearing in `logs/audit.jsonl` and a Python server
+   running that it had not started: a second Claude session was running unit 8
+   attack tests in this repository at the same time. Claude checked the session
+   list, moved its uncommitted edits into a separate git worktree on a `capstone`
+   branch, restored the shared checkout, and pointed every test run at its own
+   log directory (`AI201_LOG_DIR`) so trials could not mix into the other
+   session's log. What changed: the work lives on branch `capstone`, not `main`.
+2. **Telemetry hook order.** I asked for a per-request log that could not miss a
+   rejected request. Claude reasoned that Flask stops running `before_request`
+   hooks at the first one that raises, and the rate limiter raises a 429, so a
+   hook registered after the limiter would never start its timer for exactly the
+   requests I most want a record of. It registered the hooks first, then checked
+   it by sending six requests from one creator, which produced a 429 record with a
+   real duration. Separately, the docs say the first request takes 10-20 s; the
+   smoke test showed 3.7 s, so the cold-start target (3.0 s) was set from what a
+   user will tolerate, and both facts are stated at the top of `criteria.md`.

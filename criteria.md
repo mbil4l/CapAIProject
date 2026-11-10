@@ -1,148 +1,113 @@
-# Acceptance criteria — Provenance Guard
+# Capstone acceptance criteria — Provenance Guard, operational layer
 
-Five criteria that say what "working" means for this service, written in unit 7
-**before** you built it.
+Written **before any trial was run**. (The unit 7 criteria, about the detector
+itself, are kept in `criteria_unit7.md`.)
 
-**All five are yours.** None are given.
+Shape A: the extension is the run path, the per-request log and the numbers that
+come out of it. Criteria **1–4 are about the extension**. Criterion 5 is about
+the system as it already worked.
 
-An acceptance criterion names a number or something plainly observable. *"The
-detector is accurate"* is an opinion — and perfect AI detection isn't possible
-anyway, so it's an opinion about something nobody can deliver. *"Of 10 pieces I
-wrote myself, at most 1 is labelled high-confidence AI"* is a criterion.
-
-Under each, write a sentence or two on **why that target**. *"I allow at most 1
-false positive in 10 because on a writing site a wrong accusation costs more
-than a missed detection"* is a real answer.
-
-> Missing your own targets next unit costs you nothing. Setting a target so
-> easy you can't miss it does.
+Two honest notes on what I knew when I wrote these. I had already seen, while
+checking the build, one cold first request of about 3.7 s and warm requests of
+under 100 ms for a ~100-word text, on my laptop. The cold-start and latency
+targets below are set from what a user would put up with, not from those
+numbers. One trial = everything below run once, from fresh service processes. A
+criterion is **met only if every one of the three trials meets its target.**
 
 ---
 
-## Pick numbers you can defend
+## 1. Every call to /submit leaves a complete record
 
-**Cover at least three of these five areas.** They're prompts, not a form.
+I send 20 requests to one fresh service, in this mix: 8 valid submissions (a
+different `creator_id` each), 4 invalid ones (no `text`, empty `text`, `text` as
+`null`, `text` as a number), 1 `text` over the length limit, 1 body that is a
+JSON list instead of an object, and 6 from a single `creator_id` (the first 5
+are allowed, the 6th must be rate-limited).
 
-| Area | A question it could answer |
-|---|---|
-| False positives | How often may a human's writing get called AI? |
-| Score spread | How far apart should clearly-AI and clearly-human text score? |
-| Label coverage | Is every one of your three labels actually reachable? |
-| The appeal path | Does an appeal always change status and always get recorded? |
-| Bad input | What happens when `text` is missing, empty, or enormous? |
+**Target:** exactly 20 new lines appear in `logs/requests.jsonl` — one per
+request, no more, no fewer — and every one of them has all 18 fields from
+`telemetry.py` present, a `status_code` equal to the status the client actually
+received, and a non-null `duration_ms`. 20 of 20 in all three trials.
 
-Two things worth knowing before you pick numbers:
-
-- **The expensive mistake is one-sided.** Missing some AI text costs the site a
-  little. Accusing a real writer costs that person a lot. A criterion that
-  treats both errors as equally bad is describing a system nobody would ship.
-- **Unit 8 tests across three trials, and the target has to hold across all
-  three.** Your first signal runs a model, so identical input can score
-  differently twice. A target of "at most 1 in 10" against trials of 2, 1, 2 is
-  a **miss**.
-
----
-## 1. Own writing is rarely called AI (false positives)
-
-I run 10 things I wrote myself through it. No more than 1 may come back as
-high-confidence AI, and none may score above 0.80. At least 4 of the 10 have to
-be plain writing, short sentences and everyday words, since that's where the
-model signal gets it wrong. It has to hold in all three trials, not just on
-average.
-
-**Why this target:** Telling someone their own work looks machine-made hurts
-them a lot more than letting one AI paragraph through hurts the site. I'd like
-to say zero, but gpt2 finds plain writing predictable and I can't promise it, so
-I allow 1 in 10 and put a hard cap on how sure a wrong call can sound.
-
+**Why this target:** the failure I am guarding against is the one that shows up
+only as an absence. A rejected or rate-limited request that leaves no record
+looks identical to a quiet afternoon, so the number has to be exact, not "most".
+`status_code` must match what the client saw because a log that disagrees with
+reality is worse than none.
 
 ---
 
-## 2. Clearly AI and clearly human text score apart (score spread)
+## 2. The first request after a restart is not painful
 
-I pick 5 pieces that are obviously AI and 5 that are obviously human. The AI
-group's average combined score has to be at least 0.30 above the human group's
-average. The lowest AI score also has to beat the highest human score, in all 3
-trials.
+I start a fresh service process, wait until `/health` answers, then send one
+valid ~100-word submission and time it from the client. Three fresh starts per
+trial.
 
-**Why this target:** If the two groups overlap, the score means nothing. 0.30 is
-about the width of one label band, so the groups should land in different bands.
-I'm only asking that the easy cases are easy, not that every piece is sorted
-right.
+**Target:** the first `/submit` returns 200 in **3.0 seconds or less**, on all 3
+starts of every trial.
 
-
----
-
-## 3. All three labels can actually be reached (label coverage)
-
-Out of 10 test inputs, all three labels (human, unsure, AI) show up at least
-once. `scoring.label_ranges()` shows no gap or overlap between the bands. The
-unsure band is at least 0.25 wide. A score of 0.51 and a score of 0.95 get
-different labels.
-
-**Why this target:** A label nothing can produce is dead text, and one flip at
-0.5 isn't confidence. The unsure band protects people the system can't judge, so
-I want a minimum width on it, not just "it exists".
-
+**Why this target:** the model loads lazily on the first request, and the starter
+docs warn that this takes 10–20 s. A writer who submits a draft right after a
+restart and stares at a spinner for 15 s will assume it is broken. 3 s is about
+where waiting stops feeling like a delay and starts feeling like a fault. I did
+not pick 5 s, because at 5 s I would be excusing the very cost this criterion
+exists to catch.
 
 ---
 
-## 4. An appeal always changes status and is always recorded (appeal path)
+## 3. A warm submission comes back quickly
 
-I send 10 appeals using real `content_id`s from earlier submissions. All 10
-return 200 with status `under_review`, and all 10 add an `appeal` entry to
-`logs/audit.jsonl` with the writer's reasoning, next to the original decision.
-The original entry never changes. An appeal with an unknown `content_id`, or
-with blank reasoning, gets a 4xx and writes nothing.
+On a service that has already loaded the model, I send 20 valid submissions one
+after another (a different `creator_id` each): 8 of about 100 words, 6 of about
+250 words, 6 of about 600 words (the detector reads only the first 400 tokens,
+so the longest are cut). I time each from the client.
 
-**Why this target:** The appeal is all a wrongly flagged writer has, so it has to
-work every time, which is why it's 10 of 10. Unknown ids get refused because
-otherwise a typo looks like it worked and the writer thinks they were heard.
+**Target:** the 95th-percentile time (the 19th-fastest of 20) is **0.5 seconds or
+less**, and none takes over 1.5 seconds. Every trial.
 
-
----
-
-## 5. Bad input gets a clean refusal, never a crash (bad input)
-
-I send 6 bad requests: no `text`, empty `text`, `text` that's only spaces,
-`text` as `null`, `text` as a number, and a 50,000-word text. All 6 get a 400
-(413 for the huge one) with a JSON `error` field. None gets a 500. All 6 leave a
-`rejected` entry in the log. `/ping` still answers afterwards.
-
-**Why this target:** A bad request that crashes the service is one of the most
-common real failures, and a refusal that leaves no log entry can't be seen
-later. It's 6 of 6 because each case is simple to handle.
-
+**Why this target:** a writer sends a draft and reads the label, so under half a
+second feels instant. Rate limiting already caps a creator at 5 a minute, so
+nobody needs more throughput than this. I included the long texts on purpose:
+the cost of scoring grows with length up to the 400-token cap, and the short
+text alone would flatter the number.
 
 ---
 
-<!-- ─────────────────────────────────────────────────────────────────────────
-     UNIT 8 — read this before you change anything above.
+## 4. If the model cannot load, the service says so and stays up
 
-     If a criterion turns out to be BROKEN rather than merely unmet, you can
-     revise it, and that earns credit. But never delete or edit the original
-     line. Add the revision underneath, like this:
+I start a service whose detector model cannot be loaded (`AI201_DETECTOR_MODEL`
+set to a name that does not exist, with `HF_HUB_OFFLINE=1`) and send 5 valid
+submissions, each from a different `creator_id`.
 
-         ## 2. Uncertain cases land in the unsure band
+**Target:** all 5 get HTTP 503 with a JSON body whose `error` is
+`detector_unavailable`, each within 5 seconds; none gets a 500 or hangs; all 5
+leave a `requests.jsonl` record with `outcome` = `error` and `reason` =
+`detector_unavailable`; and `/ping` and `/health` still answer 200 afterwards.
+5 of 5, every trial.
 
-         The system handles uncertain cases well.
+**Why this target:** this is the realistic bad path for this service — a missing
+or corrupt model download, or a disk that filled up. The wrong behaviours are a
+crash (the whole service dies and `/appeal` goes with it) or a silent success
+with a made-up score, which would accuse or clear a real writer on no evidence.
+It is 5 of 5 because the handler has one branch for it and there is no excuse
+for it to be flaky.
 
-         **Why this target:** ...
+---
 
-         > **Revised in unit 8:** Text I judged borderline scores between
-         > 0.4 and 0.6 in at least 4 of 5 cases.
-         >
-         > **Why revised:** "well" gave me nothing to check. I couldn't
-         > reach a verdict from it at all.
+## 5. Odd but valid text does not crash the service
 
-     That's a revision because the criterion couldn't be MEASURED.
+(About the system as it already worked, not the extension.) I send 6 inputs that
+are legal under the length rules but nothing like normal prose: 100 words with no
+punctuation at all; 4 short words plus one 3,000-character word with no spaces;
+60 emoji separated by spaces; a paragraph in Arabic script; the same word
+repeated 200 times; and text broken up with many newlines and tabs.
 
-     Lowering a target because you missed it is not a revision, and it costs
-     you the point:
+**Target:** all 6 return 200 with `model_score`, `style_score` and `confidence` as
+numbers between 0 and 1, within 5 seconds each; none returns 500. 6 of 6, every
+trial.
 
-         ✗ "At most 1 of 10 of my own pieces flagged as AI" → "at most 3
-            of 10", because 1 of 10 turned out to be hard.
-
-     A number you missed stays where it is, gets diagnosed, and gets a fix
-     attempted. That's where the points are.
-     ───────────────────────────────────────────────────────────────────────── -->
+**Why this target:** unit 8's bad-input criterion only covered *invalid*
+requests. People paste odd things — a poem, a transcript, a line of emoji, text
+in another script — and a divide-by-zero in the style signal would turn that into
+a 500 and an unexplained failure for someone who did nothing wrong. 6 of 6
+because any crash is a real bug, not a rate.
