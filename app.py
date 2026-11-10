@@ -24,6 +24,7 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import hashlib
 import uuid
 
 from flask import Flask, jsonify, request
@@ -154,7 +155,7 @@ def health():
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
 @app.post("/submit")
-# @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
+@limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
     """
     Take a piece of text, decide about it, log the decision, answer.
@@ -245,6 +246,10 @@ def submit():
         combined_score=combined,
         label=label,
         status="decided",
+        # Not the text itself, but enough to tell whether two entries were about
+        # the same input.
+        text_chars=len(text),
+        text_hash=hashlib.sha256(text.encode("utf-8")).hexdigest()[:12],
     )
     return jsonify({
         "content_id": content_id,

@@ -354,25 +354,41 @@ language, with every number left the same. Two specific moments:
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 5 per minute, 50 per day (`RATE_LIMIT_PER_MINUTE` and
+`RATE_LIMIT_PER_DAY` in `config.py`, applied to `POST /submit`).
 
-**Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
+**Why those numbers and not others:** A real writer sends a draft, reads the
+label, fixes something and sends it again. That's a handful of requests in a
+few minutes, so 5 a minute doesn't get in their way, and 50 a day is more than a
+full working session. A script trying to map my thresholds needs hundreds or
+thousands of probes with small edits between them. At 50 a day it gets 50 data
+points a day from one creator_id, which is slow enough to be annoying but
+doesn't stop it. I didn't go lower because a limit that blocks a writer who is
+revising is worse than one that only slows a script, and a false accusation on a
+rushed rewrite is the thing I'm trying to avoid in the first place. I also
+didn't go much higher because every request runs gpt2, which is the expensive
+part of the service.
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+**What a caller counts as:** The `creator_id` in the request body. If there
+isn't a usable one (a malformed body, a bare list), it falls back to the
+caller's IP address. That's the starter's `rate_limit_key` in `app.py`, which I
+left as it was. The weak spot is obvious: a script that makes up a new
+creator_id for every request never hits a limit, and the attack set does exactly
+that. Counting by address instead would catch that script but would also lump a
+whole household or school together as one writer. I haven't built a
+combination of the two.
 
 **The run of status codes when I pushed past it:**
 
-<!-- python run_attacks.py --flood 15 -->
-
+```
+$ python run_attacks.py --flood 15
+200 200 200 200 200 429 429 429 429 429 429 429 429 429 429
 ```
 
-```
+10 of 15 were rate limited. `GET /health` reported `"rate_limiting": true`, and
+the rejections are in the audit log as entries with `"reason": "rate_limited"`
+and `"limit": "5 per 1 minute"`. The raw run is in
+`results/flood_2026-11-10_0400.md`.
 
 ---
 
