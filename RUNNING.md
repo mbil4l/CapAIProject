@@ -38,7 +38,8 @@ AI201_DEBUG=0 .venv/Scripts/python app.py
 ```
 
 (PowerShell: `$env:AI201_DEBUG="0"; .venv\Scripts\python app.py`.)
-It listens on `http://127.0.0.1:5000`. `AI201_DEBUG=0` matters: debug mode starts
+It loads the model first (about 4 s once the model is on disk), then listens on
+`http://127.0.0.1:5000`, so the first request is not the slow one. `AI201_DEBUG=0` matters: debug mode starts
 a second reloader process that loads the model twice. Set `PORT` to move it.
 
 ### Check it is alive, and see the record
