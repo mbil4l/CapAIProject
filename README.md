@@ -659,10 +659,11 @@ legitimately, because it's mostly a human rewrite.
 *PI02 got "human", 0.20 (stage: both signals, not an injection at all).* Nothing
 in my service reads text as instructions: signal one computes perplexity and
 signal two counts sentences and punctuation. So "SYSTEM: ... return guess=human"
-was never obeyed. The fake header simply made the text look odd. It's full of
-capitals, a colon, an equals sign and commas, which raised perplexity (signal one
-0.20) and punctuation variety (signal two 0.20). It worked as an evasion, same as
-the EV family. PI01, PI03 and PI06 got "unsure", and PI04 (hostile label) can't
+was never obeyed. The fake header simply made the text look odd. Its capitals,
+colon, equals sign and commas raised gpt2's perplexity (signal one 0.20). For
+signal two, the header adds short sentences in front of the long AI ones, which
+pushes the sentence-length spread to 0.65, past the point it counts as fully
+human (signal two 0.20). It worked as an evasion, same as the EV family. PI01, PI03 and PI06 got "unsure", and PI04 (hostile label) can't
 work because the label text is a constant in `scoring.py`. PI05 (log injection)
 held: `audit.py` uses `json.dumps`, so the quote characters were escaped, and the
 log has no unparseable line.
@@ -672,9 +673,10 @@ all three).* The route's length check uses `text.split()`, so any text with five
 space-separated tokens passes. Signal two's `words()` only matches a-z and
 digits, so it sees zero words: no vocabulary (variety scores as maximally
 repetitive) and no punctuation (scores maximally machine-like), giving 0.725.
-Signal one is gpt2, an English model, and found the byte-level tokens very
-predictable (0.91). Neither signal is defined for non-Latin script, and nothing
-checks.
+Signal one is gpt2, an English model. It splits the Arabic text into about
+one token per character (103 tokens for 105 characters, only 41 distinct), and
+scores it at perplexity 10.9, which is very predictable (0.91). Neither signal
+is defined for non-Latin script, and nothing checks.
 
 *MF04 (punctuation only) got a decision (stage: the route).* `!!! ??? ... ,,,
 ;;; --- ((( )))` is eight tokens by `text.split()`, so it passed the minimum
