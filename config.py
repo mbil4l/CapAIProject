@@ -85,7 +85,10 @@ DISAGREE_SHRINK = 0.5
 # that decide who pays for it.
 
 HUMAN_THRESHOLD = 0.35
-AI_THRESHOLD = 0.65
+# Was 0.65. Unit 8: the plain stand-in pieces that got called AI scored 0.698 and
+# 0.7065, and clean AI text scored 0.60 to 0.78, so the line goes just above the
+# highest human piece. See "The Improvement" in the README.
+AI_THRESHOLD = 0.72
 
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub
