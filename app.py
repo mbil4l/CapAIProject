@@ -25,6 +25,7 @@ Routes:
 """
 
 import hashlib
+import os
 import uuid
 
 from flask import Flask, g, jsonify, request
@@ -369,6 +370,16 @@ def main():
     print('    -H "Content-Type: application/json" \\')
     print("    -d '{\"message\": \"hello\"}'")
     print()
+    # Load the model BEFORE accepting traffic, so the first writer doesn't pay
+    # for it (capstone improvement: run_capstone.py criterion 2). If the load
+    # fails the service still starts: /submit then answers 503 per request, as
+    # it did before, and /ping, /health and /appeal keep working.
+    # (In debug mode Werkzeug runs this twice; only the reloaded child serves.)
+    if not config.DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        try:
+            print(f"  {detector.warm_up()}")
+        except detector.DetectorUnavailable as exc:
+            print(f"  WARNING: detector not loaded at start ({str(exc)[:120]})")
     # debug=True hands out an interactive debugger, so it's local-only — see config.py
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)
 
