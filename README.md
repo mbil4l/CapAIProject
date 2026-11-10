@@ -349,6 +349,39 @@ language, with every number left the same. Two specific moments:
   wrong encoding. I used `--data-binary @file` for that one request and added a
   note to Sample Run.
 
+**Unit 8**
+
+The AI assistant did the work for this unit too: the rate limiter, the attack
+run, `scenarios.py`, the verdicts, the fix and the write-up. Two moments, plus
+one thing I should be plain about.
+
+**Moment 3**
+
+- *What I asked for:* Ten pieces of my own writing for criterion 1. I didn't
+  have them to hand, and I asked the assistant to write them in a junior
+  developer's voice.
+- *What came back:* Ten short pieces in `my_writing.txt`, six of them plain.
+- *What I changed:* Nothing in the pieces, but the file's header and the Run Log
+  both say they are stand-ins written by the assistant, and criterion 1's
+  verdict and the fix are described as measured on them. That makes the
+  criterion 1 result weaker than a real one would be, and the README says so.
+
+**Moment 4**
+
+- *What I asked for:* A diagnosis of why each broken attack broke.
+- *What came back:* A first draft that said PI02's low style score came from
+  punctuation variety, and that the Arabic text (MF07) scored as AI because of
+  "byte-level tokens". Both were guesses.
+- *What I changed:* I had them checked before keeping them. PI02's style score
+  actually came from sentence-length spread (0.65), because the fake header adds
+  short sentences next to long ones; punctuation wasn't the cause. For MF07,
+  gpt2 really does produce about one token per character (103 for 105), so that
+  part held up. I corrected the PI02 text and added the token count.
+
+I also let the assistant's judge for criterion 4 stay strict. It counted the
+two `rejected` log lines from refused appeals as a failure of "writes nothing".
+That cost me a MISSED I could have argued away.
+
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
 ---
