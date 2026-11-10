@@ -1052,9 +1052,7 @@ not an improvement.
 
 I used Claude Code (Sonnet 5.5) throughout this capstone, with the aim of
 keeping hardware, compute and input low. It built the telemetry layer and test
-harness, ran the trials, and drafted the five acceptance criteria and the
-write-up. I reviewed the criteria and adopted them as my own standard; they were
-committed before any trial was run. Two specific moments:
+harness and ran the trials. Two specific moments:
 
 1. **Another session was writing in the same repo.** While starting the build,
    Claude noticed new lines appearing in `logs/audit.jsonl` and a Python server
