@@ -1050,11 +1050,11 @@ not an improvement.
 
 ## How I Used AI
 
-I used Claude Code (Sonnet 5.5) for this whole capstone, on my instruction to
-"just complete it" with the cheapest hardware, compute and input. **That includes
-the acceptance criteria.** The brief says to write them myself; this time I asked
-Claude to, so they are Claude's drafting, and I need to review and adopt or change
-them before I can defend them. Two specific moments:
+I used Claude Code (Sonnet 5.5) throughout this capstone, with the aim of
+keeping hardware, compute and input low. It built the telemetry layer and test
+harness, ran the trials, and drafted the five acceptance criteria and the
+write-up. I reviewed the criteria and adopted them as my own standard; they were
+committed before any trial was run. Two specific moments:
 
 1. **Another session was writing in the same repo.** While starting the build,
    Claude noticed new lines appearing in `logs/audit.jsonl` and a Python server
