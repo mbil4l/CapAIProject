@@ -524,3 +524,53 @@ that produced it:
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+
+---
+
+# Capstone — Deploy and instrument Provenance Guard
+
+Everything above is the system as it stood after unit 8. Everything below this
+line is the capstone, in the order the brief asks for it.
+
+## What This Extends
+
+**Provenance Guard** (project 4, the AI-text detector service). It already had
+`POST /submit`, `POST /appeal`, two signals, three labels, rate limiting and a
+decision audit log (`logs/audit.jsonl`).
+
+**What's new:** an operational layer around it.
+
+- a per-request telemetry record (`logs/requests.jsonl`, written by
+  `telemetry.py`) with the input, output, outcome and timings of *every*
+  `/submit` call, including rejections, rate limits and crashes;
+- a documented single-command run path with a clean-checkout test
+  (`RUNNING.md`);
+- a measured cost per run, in seconds of compute;
+- a capstone test harness (`run_capstone.py`) that runs the five new criteria
+  three times each.
+
+## The Shape
+
+**Shape A — Deploy and instrument.** The service already worked on my laptop and
+only ever ran from my editor. This unit I put a run path and a measuring layer
+around it and then tested the numbers that come out of it. The model, the two
+signals, the thresholds and the labels are not touched.
+
+**Run path: B (local, with logs).** `RUNNING.md` has the command. The reason is
+arithmetic, not preference: gpt2 is ~550 MB on disk and torch is another few
+hundred MB in RAM, against a 512 MB free host.
+
+**Out of scope — decided before building, on purpose:**
+
+- *No new detection signal and no re-tuning of weights or thresholds.* That is a
+  different project, and the labels were already tested in unit 8.
+- *No hosted deployment, no Docker, no gunicorn.* gunicorn does not run on
+  Windows, and the host is the wrong size for the model anyway.
+- *No change to the decision audit log's shape.* `logs/audit.jsonl` keeps its
+  nine fields so unit 8's entries stay comparable with new ones. Telemetry is a
+  separate file.
+- *No load test beyond one local client.* (Listed as a stretch; not claimed.)
+
+Size check: the telemetry layer is one new module plus two hooks in `app.py`.
+That is one piece of work, not three.
