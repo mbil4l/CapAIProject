@@ -1,0 +1,29 @@
+# STAND-IN WRITING. These ten pieces were written by the AI assistant in a junior
+# developer's voice. They are NOT the repo owner's own writing, and criterion 1 is
+# measured on them as stand-ins. Replace them with real pieces and re-run to get
+# a real number. Lines starting with # are ignored by scenarios.py.
+[plain]
+Today I fixed the bug in the login form. The error showed up when the email had a plus sign in it. I added a test for it first. Then I changed the regex and the test passed. I opened a PR and asked Dana to look at it.
+---
+[plain]
+Standup notes. Yesterday I finished the search filter. Today I am working on the pagination. I am blocked on the API because it returns the wrong page count. I asked Marcus about it in the channel.
+---
+Spent most of Tuesday chasing a bug that turned out to be a timezone thing. The dates looked fine on my laptop and wrong on staging, which made no sense until I checked the server clock. Of course it was set to UTC and mine wasn't. Lesson learned, I guess: stop trusting localhost.
+---
+[plain]
+I joined the team three weeks ago. Everyone has been nice and patient with my questions. The codebase is bigger than I thought, though. I still get lost in the services folder. My buddy says it takes about two months to feel comfortable.
+---
+Code review comment from Priya today: "why is this a class?" Fair question. I had no good answer, so I rewrote it as a plain function and deleted forty lines. It's embarrassing how much better it got.
+---
+[plain]
+This PR adds rate limiting to the upload endpoint. Users can now send ten uploads per minute. After that they get a 429 and a short message. I added tests for the limit and for the reset. Please check the error text, I'm not sure it reads well.
+---
+I keep telling myself I'll learn Docker properly and then I just copy the same compose file from the last project. It works, mostly, until the day it doesn't, and then I'm googling error messages at 11pm like it's my first week. Maybe this weekend. Probably not.
+---
+[plain]
+The deploy went out at four. Nothing broke, which was nice. I watched the logs for twenty minutes anyway. Then I went home and made pasta. Tomorrow I start on the settings page.
+---
+Honestly the hardest part of this job so far isn't the code, it's knowing when to ask for help. If I ask too early I feel lazy. If I wait two hours, I've wasted two hours and someone says "oh, just run the migration." I'm trying to land on an hour. We'll see.
+---
+[plain]
+I wrote a script to rename the log files. It reads the folder and adds the date to each name. It skips files that already have a date. I ran it on a copy first. It saved me about an hour of clicking.

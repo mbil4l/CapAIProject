@@ -1,0 +1,28 @@
+
+own writing flagged as AI  (criterion 1)
+  trial 1: 2/10 flagged AI, top score 0.71, 6 plain (FAIL)
+  trial 2: 2/10 flagged AI, top score 0.71, 6 plain (FAIL)
+  trial 3: 2/10 flagged AI, top score 0.71, 6 plain (FAIL)
+
+clearly AI vs clearly human  (criterion 2)
+  trial 1: gap 0.43, lowest AI 0.60 vs highest human 0.39 (pass)
+  trial 2: gap 0.43, lowest AI 0.60 vs highest human 0.39 (pass)
+  trial 3: gap 0.43, lowest AI 0.60 vs highest human 0.39 (pass)
+
+all three labels reachable  (criterion 3)
+  trial 1: 3/3 labels (human 3, unsure 4, ai 3), unsure band 0.30, 0.51 vs 0.95 differ (pass)
+  trial 2: 3/3 labels (human 3, unsure 4, ai 3), unsure band 0.30, 0.51 vs 0.95 differ (pass)
+  trial 3: 3/3 labels (human 3, unsure 4, ai 3), unsure band 0.30, 0.51 vs 0.95 differ (pass)
+
+appeal changes status  (criterion 4)
+  trial 1: 10/10 appeals ok, 2/2 bad ones refused with a 4xx, 0 appeal entries and 2 log lines of any kind written by them (FAIL)
+  trial 2: 10/10 appeals ok, 2/2 bad ones refused with a 4xx, 0 appeal entries and 2 log lines of any kind written by them (FAIL)
+  trial 3: 10/10 appeals ok, 2/2 bad ones refused with a 4xx, 0 appeal entries and 2 log lines of any kind written by them (FAIL)
+
+bad input refused cleanly  (criterion 5)
+  trial 1: 6/6 refused cleanly, 0 crashed, 6/6 logged, ping ok (pass)
+  trial 2: 6/6 refused cleanly, 0 crashed, 6/6 logged, ping ok (pass)
+  trial 3: 6/6 refused cleanly, 0 crashed, 6/6 logged, ping ok (pass)
+
+Wrote results\run_2026-11-10_0510_before.md
+Commit it. It's the evidence the test actually happened.

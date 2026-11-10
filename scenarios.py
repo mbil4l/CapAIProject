@@ -32,7 +32,10 @@ def load_my_writing() -> tuple[list[str], int]:
     if not path.exists():
         return ["REPLACE ME: put ten pieces of your own writing in my_writing.txt"], 0
     pieces, plain = [], 0
-    for block in path.read_text(encoding="utf-8").split("\n---\n"):
+    raw = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    # Lines starting with "#" are notes to me, not part of any piece.
+    raw = "\n".join(l for l in raw.splitlines() if not l.startswith("#"))
+    for block in raw.split("\n---\n"):
         block = block.strip()
         if not block:
             continue
