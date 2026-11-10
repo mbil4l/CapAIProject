@@ -27,15 +27,38 @@ Routes:
 import hashlib
 import uuid
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 
 import audit
 import config
 import detector
 import scoring
 import stylometry
+import telemetry
 
 app = Flask(__name__)
+
+
+# ── Telemetry — CAPSTONE ──────────────────────────────────────────────────────
+# One record per /submit call, written from hooks rather than from the handler,
+# so nothing the handler does (or fails to do) can skip it. Registered BEFORE the
+# rate limiter below: Flask stops running before_request hooks at the first one
+# that raises, and the limiter raises 429 — hooks registered after it would never
+# start their timer for exactly the requests we most want a trace of.
+
+@app.before_request
+def _telemetry_start():
+    if request.path == "/submit":
+        g.tele = telemetry.start(detector_cold=detector._model is None)
+
+
+@app.after_request
+def _telemetry_end(response):
+    if request.path == "/submit":
+        ctx = getattr(g, "tele", None) or telemetry.start(detector_cold=False)
+        telemetry.finish(ctx, request, response)
+        response.headers["X-Request-Id"] = ctx["request_id"]
+    return response
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
